@@ -141,18 +141,43 @@ function TransactionForm({ client, type, item, categories, engineers, onClose, o
   const [amount,setAmount]=useState(item?.amount!=null?String(item.amount):'');
   const [date,setDate]=useState(item?.transaction_date||isoToday());
   const [notes,setNotes]=useState(item?.notes||'');
-  return <Modal title={editing?'تعديل المعاملة':type==='deposit'?'إضافة إيداع':'إضافة مصروف'} subtitle={client?.name||''} onClose={onClose}><form className="form-stack" onSubmit={e=>{e.preventDefault();onSave({type,categoryId,kind,method,recipientId,description,amount,date,notes},item?.id);}}>
-    <span className={`type-caption ${type}`}>{type==='deposit'?<ArrowDownLeft size={17}/>:<ArrowUpRight size={17}/>} {type==='deposit'?'إيداع مالي':'مصروف مالي'}</span>
-    {type==='expense'?<div className="form-grid"><Select label="بند المصروف *" value={categoryId} onChange={setCategoryId} required items={categories.map(c=>({id:c.id,label:c.name}))}/><Select label="نوع الصرف *" value={kind} onChange={setKind} required items={Object.entries(kinds).map(([id,label])=>({id,label}))}/></div>:<div className="form-grid"><Select label="طريقة الإيداع *" value={method} onChange={setMethod} required items={Object.entries(methods).map(([id,label])=>({id,label}))}/><Select label="المهندس المستلم *" value={recipientId} onChange={setRecipientId} required items={engineers.map(e=>({id:e.id,label:e.display_name}))}/></div>}
-    <Field label={type==='deposit'?'بيان الإيداع':'وصف المصروف *'} value={description} onChange={setDescription} required={type==='expense'} placeholder="تفاصيل العملية"/>
+  const title=editing?'تعديل المعاملة':type==='deposit'?'إضافة إيداع':type==='supervision'?'خصم نسبة إشراف':'إضافة مصروف';
+  return <Modal title={title} subtitle={client?.name||''} onClose={onClose}><form className="form-stack" onSubmit={e=>{e.preventDefault();onSave({type,categoryId,kind,method,recipientId,description: type==='supervision'?'نسبة إشراف':description,amount,date,notes:type==='supervision'?'':notes},item?.id);}}>
+    <span className={`type-caption ${type}`}>{type==='deposit'?<ArrowDownLeft size={17}/>:<ArrowUpRight size={17}/>} {type==='deposit'?'إيداع مالي':type==='supervision'?'نسبة إشراف':'مصروف مالي'}</span>
+    {type==='expense'?<div className="form-grid"><Select label="بند المصروف *" value={categoryId} onChange={setCategoryId} required items={categories.map(c=>({id:c.id,label:c.name}))}/><Select label="نوع الصرف *" value={kind} onChange={setKind} required items={Object.entries(kinds).map(([id,label])=>({id,label}))}/></div>:type==='deposit'?<div className="form-grid"><Select label="طريقة الإيداع *" value={method} onChange={setMethod} required items={Object.entries(methods).map(([id,label])=>({id,label}))}/><Select label="المهندس المستلم *" value={recipientId} onChange={setRecipientId} required items={engineers.map(e=>({id:e.id,label:e.display_name}))}/></div>:<p className="supervision-note">هتتخصم قيمة الإشراف دي من رصيد العميل كحركة مستقلة. المبالغ اللي احتسبها النظام تلقائيًا من الإيداعات ما تتسجلش يدويًا مرة تانية.</p>}
+    {type!=='supervision'&&<Field label={type==='deposit'?'بيان الإيداع':'وصف المصروف *'} value={description} onChange={setDescription} required={type==='expense'} placeholder="تفاصيل العملية"/>}
     <div className="form-grid"><Field label="المبلغ (ج.م) *" value={amount} onChange={setAmount} required inputMode="decimal" placeholder="0.00"/><Field label="التاريخ" value={date} type="date" onChange={setDate} required/></div>
-    <Field label="ملاحظات (اختياري)" value={notes} onChange={setNotes} placeholder="أضف ملاحظة..."/>
+    {type!=='supervision'&&<Field label="ملاحظات (اختياري)" value={notes} onChange={setNotes} placeholder="أضف ملاحظة..."/>}
     <div className="modal-actions"><Button variant="ghost" onClick={onClose}>إلغاء</Button><Button type="submit" disabled={saving}>{saving?'جاري الحفظ...':editing?'حفظ التعديل':'حفظ المعاملة'}</Button></div>
   </form></Modal>;
 }
 function ClientForm({ onClose, onSave }) {
-  const [name,setName]=useState(''),[project,setProject]=useState(''),[phone,setPhone]=useState('');
-  return <Modal title="إضافة عميل جديد" onClose={onClose}><form className="form-stack" onSubmit={e=>{e.preventDefault();onSave({name,project,phone});}}><Field label="اسم العميل *" value={name} onChange={setName} required/><Field label="اسم المشروع" value={project} onChange={setProject}/><Field label="رقم الهاتف" value={phone} onChange={setPhone} inputMode="tel"/><div className="modal-actions"><Button variant="ghost" onClick={onClose}>إلغاء</Button><Button type="submit">إضافة عميل</Button></div></form></Modal>;
+  const [name,setName]=useState(''),[project,setProject]=useState(''),[phone,setPhone]=useState(''),[supervisionPercent,setSupervisionPercent]=useState('0');
+  return <Modal title="إضافة عميل جديد" onClose={onClose}><form className="form-stack" onSubmit={e=>{e.preventDefault();onSave({name,project,phone,supervisionPercent});}}>
+    <Field label="اسم العميل *" value={name} onChange={setName} required/>
+    <Field label="اسم المشروع" value={project} onChange={setProject}/>
+    <Field label="رقم الهاتف" value={phone} onChange={setPhone} inputMode="tel"/>
+    <Field label="نسبة الإشراف للعميل (%)" type="number" value={supervisionPercent} onChange={setSupervisionPercent} inputMode="decimal" placeholder="10"/>
+    <p className="supervision-note">النسبة دي بتتحسب تلقائيًا على كل إيداع للعميل، وتظهر كحركة مستقلة تخصم من رصيده. اكتب 0 لو العميل بدون إشراف.</p>
+    <div className="modal-actions"><Button variant="ghost" onClick={onClose}>إلغاء</Button><Button type="submit">إضافة عميل</Button></div>
+  </form></Modal>;
+}
+function SupervisionPercentForm({client,onClose,onSave,saving}) {
+  const [value,setValue]=useState(String(client?.supervision_percent??0));
+  const [error,setError]=useState('');
+  return <Modal title="تعديل نسبة الإشراف" subtitle={client?.name||''} onClose={onClose}>
+    <form className="form-stack" onSubmit={async e=>{
+      e.preventDefault();setError('');
+      const n=Number(value);
+      if(!Number.isFinite(n)||n<0||n>100){setError('اكتب نسبة بين 0 و100');return;}
+      try{await onSave(value);}catch(err){setError(err?.message||'تعذر الحفظ');}
+    }}>
+      <Field label="نسبة الإشراف (%)" type="number" value={value} onChange={setValue} inputMode="decimal" required/>
+      <p className="supervision-note">تغيير النسبة هيعيد احتساب حركات الإشراف التلقائية المرتبطة بإيداعات العميل القديمة والجديدة بعد المزامنة. الحركات اليدوية هتفضل زي ما هي.</p>
+      {error&&<p className="inline-error" role="alert">{error}</p>}
+      <div className="modal-actions"><Button variant="ghost" onClick={onClose}>إلغاء</Button><Button type="submit" disabled={saving}>{saving?'جاري الحفظ...':'حفظ النسبة'}</Button></div>
+    </form>
+  </Modal>;
 }
 function ManageList({ title, rows, isEngineer, onClose, onAdd, onToggle, loading }) {
   const [name,setName]=useState('');
@@ -169,4 +194,4 @@ function ReportDocument({ rows, clientLabel, from, to }) {
   </div>;
 }
 
-export { Logo, Button, IconButton, Field, Select, Modal, MoneyCard, Empty, ChartRows, AuthLogin, PinGate, TransactionForm, ClientForm, ManageList, ReportDocument };
+export { Logo, Button, IconButton, Field, Select, Modal, MoneyCard, Empty, ChartRows, AuthLogin, PinGate, TransactionForm, ClientForm, SupervisionPercentForm, ManageList, ReportDocument };
