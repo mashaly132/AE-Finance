@@ -1,0 +1,55 @@
+# Codemagic: بيبني أندرويد (APK) وآيفون (IPA -> TestFlight)
+# قبل التشغيل: أنشئ Variable group اسمها "supabase" فيها SUPABASE_URL و SUPABASE_ANON_KEY
+workflows:
+  android:
+    name: AE Finance - Android
+    instance_type: linux_x2
+    max_build_duration: 30
+    environment:
+      flutter: stable
+      groups: [supabase]
+    scripts:
+      - name: Prepare platforms
+        script: bash tools/setup_platforms.sh
+      - name: Build APK
+        script: >
+          flutter build apk --release
+          --dart-define=SUPABASE_URL=$SUPABASE_URL
+          --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY
+    artifacts:
+      - build/app/outputs/flutter-apk/*.apk
+
+  ios:
+    name: AE Finance - iOS (TestFlight)
+    instance_type: mac_mini_m2
+    max_build_duration: 45
+    integrations:
+      app_store_connect: AE_Finance_ASC   # اسم الـ integration اللي هتعمله في Codemagic
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+      groups: [supabase]
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.aedesign.aefinance
+      vars:
+        APP_STORE_APPLE_ID: 0000000000   # الـ Apple ID الرقمي للتطبيق من App Store Connect
+    scripts:
+      - name: Prepare platforms
+        script: bash tools/setup_platforms.sh
+      - name: Set up code signing
+        script: xcode-project use-profiles
+      - name: Build IPA
+        script: >
+          flutter build ipa --release
+          --build-number=$(($(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID") + 1))
+          --export-options-plist=/Users/builder/export_options.plist
+          --dart-define=SUPABASE_URL=$SUPABASE_URL
+          --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY
+    artifacts:
+      - build/ios/ipa/*.ipa
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
