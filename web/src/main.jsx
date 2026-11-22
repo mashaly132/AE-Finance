@@ -35,6 +35,7 @@ function App() {
   const [from,setFrom]=useState(''),[to,setTo]=useState(''),[busy,setBusy]=useState(false),[pinBusy,setPinBusy]=useState(false);
   const [error,setError]=useState(''),[online,setOnline]=useState(navigator.onLine),[pending,setPending]=useState(0),[lastSync,setLastSync]=useState('');
   const [sidebarOpen,setSidebarOpen]=useState(false),[exporting,setExporting]=useState(false);
+  const [logoUploading,setLogoUploading]=useState(false),[logoMessage,setLogoMessage]=useState('');
   const notify=message=>setError(message);
   const loadEngineers=useCallback(async()=>{
     if(!supabase)return;
@@ -116,9 +117,27 @@ function App() {
     const payload=table==='engineers'?{display_name:name.trim()}:{name:name.trim(),sort_order:Math.max(0,...categories.map(c=>c.sort_order))+1};
     const {error:e}=await supabase.from(table).insert(payload);if(e)throw e;await doSync();}
   async function toggleLookup(table,id,active){const {error:e}=await supabase.from(table).update({active}).eq('id',id);if(e)alert(e.message);else await doSync();}
-  async function uploadLogo(file){if(!file)return;const name=(file.name||'image.png').split('.').pop().toLowerCase();if(!['png','jpg','jpeg','webp'].includes(name))return alert('ارفع PNG أو JPG أو WEBP');
-    const path=`branding/logo_${Date.now()}.${name}`;const {error:e}=await supabase.storage.from('ae-branding').upload(path,file);if(e)return alert(e.message);
-    const {error:saveError}=await supabase.from('app_settings').upsert({setting_key:'brand_logo_path',setting_value:{path},updated_by:engineer.id});if(saveError)return alert(saveError.message);window.location.reload();}
+  async function uploadLogo(file){
+    if(!file)return;
+    const extensions={'image/png':'png','image/jpeg':'jpg','image/webp':'webp'};
+    const ext=extensions[file.type];
+    if(!ext){setLogoMessage('اختار صورة PNG أو JPG أو WEBP');return;}
+    if(file.size>3*1024*1024){setLogoMessage('حجم اللوجو لازم ما يزيدش عن 3 ميجابايت');return;}
+    setLogoUploading(true);setLogoMessage('');
+    try {
+      if(!navigator.onLine)throw new Error('لازم الإنترنت يكون متصل عشان نحفظ اللوجو');
+      const path=`branding/logo_${Date.now()}_${Math.random().toString(36).slice(2,10)}.${ext}`;
+      const {error:uploadError}=await supabase.storage.from('ae-branding').upload(path,file,{contentType:file.type,upsert:false});
+      if(uploadError)throw uploadError;
+      const {error:saveError}=await supabase.from('app_settings').upsert({setting_key:'brand_logo_path',setting_value:{path},updated_by:engineer.id});
+      if(saveError)throw saveError;
+      const {data:confirmed,error:readError}=await supabase.from('app_settings').select('setting_value').eq('setting_key','brand_logo_path').maybeSingle();
+      if(readError||confirmed?.setting_value?.path!==path)throw new Error('لم نتمكن من التأكد من حفظ اللوجو. جرّب مرة تانية');
+      window.dispatchEvent(new Event('ae-finance:brand-logo-updated'));
+      setLogoMessage('تم حفظ اللوجو الجديد. هيتحدث في النظام بدون إعادة تسجيل الدخول.');
+    }catch(e){setLogoMessage('حصل خطأ أثناء تغيير اللوجو: '+(e?.message||'راجع الاتصال والصلاحيات'));}
+    finally{setLogoUploading(false);}
+  }
   async function downloadReport(format){if(!filteredReport.length)return;setExporting(true);try{
     if(format==='xlsx')await exportExcel(filteredReport,clientLabel);
     else await exportPdf(document.getElementById('print-report'),`AE-Finance-Report-${isoToday()}.pdf`);
@@ -161,7 +180,7 @@ function App() {
         <section className="panel report-panel"><div className="panel-head"><h3>{{expenses:'المصروفات حسب البند',deposits:'الإيداعات حسب الطريقة',clients:'الملخص حسب العميل',transactions:'جميع المعاملات'}[reportView]}</h3></div>
           {reportView==='expenses'?<ChartRows rows={expenseGroups}/>:reportView==='deposits'?<ChartRows rows={depositGroups}/>:reportView==='clients'?<div className="client-report-list">{customerBalances.map(c=>{const r=filteredReport.filter(t=>t.client_id===c.id),m=reportMetrics(r);return r.length?<div key={c.id}><span>{c.name}</span><b dir="ltr">{formatMoney(m.dep-m.exp)}</b></div>:null})}</div>:txnList(filteredReport)}
         </section><div className="export-row"><Button onClick={()=>downloadReport('xlsx')} disabled={exporting||!filteredReport.length}><FileSpreadsheet size={19}/> {exporting?'بنجّهز التقرير...':'تحميل Excel'}</Button><Button variant="outline" onClick={()=>downloadReport('pdf')} disabled={exporting||!filteredReport.length}><FileText size={19}/> تصدير PDF</Button></div>
-      </>:<><div className="section-heading"><div><h2>الإعدادات</h2><p>الهوية وبيانات المكتب والمزامنة</p></div></div><div className="settings-stack"><label className="setting-item"><span className="setting-icon"><ImageIcon size={21}/></span><span className="setting-copy"><b>لوجو وهوية المكتب</b><small>تغيير صورة الشعار</small></span><Logo size="mini"/><input type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={e=>uploadLogo(e.target.files?.[0])}/><ChevronLeft size={17}/></label>
+      </>:<><div className="section-heading"><div><h2>الإعدادات</h2><p>الهوية وبيانات المكتب والمزامنة</p></div></div><div className="settings-stack"><label className="setting-item" title="رفع لوجو جديد"><span className="setting-icon"><ImageIcon size={21}/></span><span className="setting-copy"><b>لوجو وهوية المكتب</b><small>{logoUploading?'بنحفظ اللوجو...':'اختار صورة PNG أو JPG أو WEBP (حد أقصى 3MB)'}</small></span><Logo size="mini"/><input type="file" accept="image/png,image/jpeg,image/webp" disabled={logoUploading} hidden onChange={e=>{const file=e.target.files?.[0];e.target.value='';uploadLogo(file);}}/><ChevronLeft size={17}/></label>{logoMessage&&<p className="setting-feedback" role="status">{logoMessage}</p>}
         <button className="setting-item" onClick={()=>setModal({type:'manage',table:'engineers'})}><span className="setting-icon"><Users size={21}/></span><span className="setting-copy"><b>إدارة المهندسين</b><small>إضافة وتفعيل أو إيقاف</small></span><ChevronLeft size={17}/></button>
         <button className="setting-item" onClick={()=>setModal({type:'manage',table:'expense_categories'})}><span className="setting-icon"><Tags size={21}/></span><span className="setting-copy"><b>بنود المصروفات</b><small>تعديل حالة البنود وإضافة الجديد</small></span><ChevronLeft size={17}/></button>
         <button className="setting-item" onClick={doSync}><span className="setting-icon"><RefreshCw size={21}/></span><span className="setting-copy"><b>المزامنة والنسخ الاحتياطي</b><small>{online?'متصل':'غير متصل'} • {pending} معلّقة {lastSync&&`• آخر مزامنة ${lastSync}`}</small></span><ChevronLeft size={17}/></button>
