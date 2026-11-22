@@ -14,6 +14,7 @@ import {
   getPinStatuses, setEngineerPin, verifyEngineerPin
 } from './data';
 import { exportExcel, exportPdf, groupExpenses, groupDeposits, reportMetrics } from './export';
+import { AccountSettings } from './account-settings';
 import './style.css';
 
 const methods = { cash:'نقدي', instapay:'InstaPay', vodafone_cash:'Vodafone Cash' };
@@ -82,8 +83,10 @@ function App() {
   const clientRows=rows.filter(t=>t.client_id===selectedClient?.id);
   const clientMetrics=reportMetrics(clientRows);
   async function onLogin(username,password){
-    if(username.trim().toLowerCase()!==officeUsername.toLowerCase())throw new Error('اسم المستخدم أو كلمة المرور غير صحيحة');
-    const {error:authError}=await supabase.auth.signInWithPassword({email:officeEmail,password});
+    const accountName=username.trim().toLowerCase();
+    if(!/^[a-z][a-z0-9_]{2,31}$/.test(accountName))throw new Error('اسم المستخدم أو كلمة المرور غير صحيحة');
+    const signInEmail=accountName===officeUsername.toLowerCase()?officeEmail:`${accountName}@accounts.aefinance.invalid`;
+    const {error:authError}=await supabase.auth.signInWithPassword({email:signInEmail,password});
     if(authError)throw new Error('اسم المستخدم أو كلمة المرور غير صحيحة');
   }
   async function onPinVerify(engineerId,pin){setPinBusy(true);try{
@@ -164,7 +167,7 @@ function App() {
         <button className="setting-item" onClick={doSync}><span className="setting-icon"><RefreshCw size={21}/></span><span className="setting-copy"><b>المزامنة والنسخ الاحتياطي</b><small>{online?'متصل':'غير متصل'} • {pending} معلّقة {lastSync&&`• آخر مزامنة ${lastSync}`}</small></span><ChevronLeft size={17}/></button>
         <button className="setting-item" onClick={()=>{setEngineer(null);setSelectedClient(null);}}><span className="setting-icon"><KeyRound size={21}/></span><span className="setting-copy"><b>قفل دخول المهندس</b><small>الرجوع إلى شاشة PIN</small></span><ChevronLeft size={17}/></button>
         <button className="setting-item danger-setting" onClick={signOut}><span className="setting-icon"><LogOut size={21}/></span><span className="setting-copy"><b>تسجيل خروج المكتب</b><small>{officeUsername}</small></span><ChevronLeft size={17}/></button>
-        </div></>}
+        </div><AccountSettings session={session}/></>}
     </main><nav className="bottom-nav" aria-label="تنقل الموبايل">{tabs.map(({label,Icon},i)=><button type="button" key={label} className={tab===i?'selected':''} onClick={()=>{setTab(i);setSelectedClient(null);}}><Icon size={21}/><span>{label}</span></button>)}</nav></div>
     {modal?.type==='client'&&<ClientForm onClose={()=>setModal(null)} onSave={saveClient}/>}
     {modal?.type==='chooseTx'&&<Modal title="اختار نوع المعاملة" onClose={()=>setModal(null)}><div className="tx-choices"><button onClick={()=>setModal({type:'tx',txType:'expense'})}><ArrowUpRight size={26}/> صرف</button><button onClick={()=>setModal({type:'tx',txType:'deposit'})}><ArrowDownLeft size={26}/> إيداع</button></div></Modal>}
