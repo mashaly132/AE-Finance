@@ -144,7 +144,7 @@ function TransactionForm({ client, type, item, categories, engineers, onClose, o
   const title=editing?'تعديل المعاملة':type==='deposit'?'إضافة إيداع':type==='supervision'?'خصم نسبة إشراف':'إضافة مصروف';
   return <Modal title={title} subtitle={client?.name||''} onClose={onClose}><form className="form-stack" onSubmit={e=>{e.preventDefault();onSave({type,categoryId,kind,method,recipientId,description: type==='supervision'?'نسبة إشراف':description,amount,date,notes:type==='supervision'?'':notes},item?.id);}}>
     <span className={`type-caption ${type}`}>{type==='deposit'?<ArrowDownLeft size={17}/>:<ArrowUpRight size={17}/>} {type==='deposit'?'إيداع مالي':type==='supervision'?'نسبة إشراف':'مصروف مالي'}</span>
-    {type==='expense'?<div className="form-grid"><Select label="بند المصروف *" value={categoryId} onChange={setCategoryId} required items={categories.map(c=>({id:c.id,label:c.name}))}/><Select label="نوع الصرف *" value={kind} onChange={setKind} required items={Object.entries(kinds).map(([id,label])=>({id,label}))}/></div>:type==='deposit'?<div className="form-grid"><Select label="طريقة الإيداع *" value={method} onChange={setMethod} required items={Object.entries(methods).map(([id,label])=>({id,label}))}/><Select label="المهندس المستلم *" value={recipientId} onChange={setRecipientId} required items={engineers.map(e=>({id:e.id,label:e.display_name}))}/></div>:<p className="supervision-note">هتتخصم قيمة الإشراف دي من رصيد العميل كحركة مستقلة. المبالغ اللي احتسبها النظام تلقائيًا من الإيداعات ما تتسجلش يدويًا مرة تانية.</p>}
+    {type==='expense'?<div className="form-grid"><Select label="بند المصروف *" value={categoryId} onChange={setCategoryId} required items={categories.map(c=>({id:c.id,label:c.name}))}/><Select label="نوع الصرف *" value={kind} onChange={setKind} required items={Object.entries(kinds).map(([id,label])=>({id,label}))}/></div>:type==='deposit'?<div className="form-grid"><Select label="طريقة الإيداع *" value={method} onChange={setMethod} required items={Object.entries(methods).map(([id,label])=>({id,label}))}/><Select label="المهندس المستلم *" value={recipientId} onChange={setRecipientId} required items={engineers.map(e=>({id:e.id,label:e.display_name}))}/></div>:<p className="supervision-note">ده تحصيل يدوي لنسبة الإشراف. المستحق بيتحسب على مصروفات العميل فقط، ومش بيتحصّل تلقائيًا. المبلغ اللي تسجّله هنا بس هو اللي هيُخصم من رصيد العميل.</p>}
     {type!=='supervision'&&<Field label={type==='deposit'?'بيان الإيداع':'وصف المصروف *'} value={description} onChange={setDescription} required={type==='expense'} placeholder="تفاصيل العملية"/>}
     <div className="form-grid"><Field label="المبلغ (ج.م) *" value={amount} onChange={setAmount} required inputMode="decimal" placeholder="0.00"/><Field label="التاريخ" value={date} type="date" onChange={setDate} required/></div>
     {type!=='supervision'&&<Field label="ملاحظات (اختياري)" value={notes} onChange={setNotes} placeholder="أضف ملاحظة..."/>}
@@ -158,7 +158,7 @@ function ClientForm({ onClose, onSave }) {
     <Field label="اسم المشروع" value={project} onChange={setProject}/>
     <Field label="رقم الهاتف" value={phone} onChange={setPhone} inputMode="tel"/>
     <Field label="نسبة الإشراف للعميل (%)" type="number" value={supervisionPercent} onChange={setSupervisionPercent} inputMode="decimal" placeholder="10"/>
-    <p className="supervision-note">النسبة دي بتتحسب تلقائيًا على كل إيداع للعميل، وتظهر كحركة مستقلة تخصم من رصيده. اكتب 0 لو العميل بدون إشراف.</p>
+    <p className="supervision-note">النسبة دي بتحسب مستحق الإشراف على المصروفات (الخامات والمصنعية) فقط، بدون أي تحصيل تلقائي. سجّل التحصيل بنفسك لاحقًا. اكتب 0 لو العميل بدون إشراف.</p>
     <div className="modal-actions"><Button variant="ghost" onClick={onClose}>إلغاء</Button><Button type="submit">إضافة عميل</Button></div>
   </form></Modal>;
 }
@@ -173,7 +173,7 @@ function SupervisionPercentForm({client,onClose,onSave,saving}) {
       try{await onSave(value);}catch(err){setError(err?.message||'تعذر الحفظ');}
     }}>
       <Field label="نسبة الإشراف (%)" type="number" value={value} onChange={setValue} inputMode="decimal" required/>
-      <p className="supervision-note">تغيير النسبة هيعيد احتساب حركات الإشراف التلقائية المرتبطة بإيداعات العميل القديمة والجديدة بعد المزامنة. الحركات اليدوية هتفضل زي ما هي.</p>
+      <p className="supervision-note">تغيير النسبة هيغيّر إجمالي الإشراف المستحق على المصروفات الحالية، لكنه مش هينشئ معاملات جديدة ولا هيغيّر المبالغ اللي حصّلتها يدويًا.</p>
       {error&&<p className="inline-error" role="alert">{error}</p>}
       <div className="modal-actions"><Button variant="ghost" onClick={onClose}>إلغاء</Button><Button type="submit" disabled={saving}>{saving?'جاري الحفظ...':'حفظ النسبة'}</Button></div>
     </form>
@@ -183,13 +183,18 @@ function ManageList({ title, rows, isEngineer, onClose, onAdd, onToggle, loading
   const [name,setName]=useState('');
   return <Modal title={title} onClose={onClose}><form className="inline-add" onSubmit={e=>{e.preventDefault();onAdd(name).then(()=>setName(''));}}><input placeholder={isEngineer?'اسم المهندس':'اسم البند'} value={name} onChange={e=>setName(e.target.value)} required/><Button type="submit" disabled={loading}><Plus size={17}/> إضافة</Button></form><div className="manage-list">{rows.map(r=><label className="manage-item" key={r.id}><span><b>{isEngineer?r.display_name:r.name}</b><small>{r.active?'مفعّل':'موقوف'}</small></span><input type="checkbox" checked={r.active} onChange={e=>onToggle(r.id,e.target.checked)}/></label>)}</div></Modal>;
 }
-function ReportDocument({ rows, clientLabel, from, to }) {
+function ReportDocument({ rows, clients=[], clientLabel, from, to }) {
   const m=reportMetrics(rows),expenses=groupExpenses(rows),deposits=groupDeposits(rows);
+  const due=clients.reduce((total,c)=>{
+    const spent=rows.filter(t=>t.client_id===c.id && t.transaction_type==='expense').reduce((s,t)=>s+t.cents,0);
+    return total+Math.round(spent*(Number(c.supervision_percent)||0)/100);
+  },0);
+  const outstanding=Math.max(0,due-m.sup);
   return <div className="report-document" dir="rtl"><div className="doc-head"><div><strong>AE FINANCE</strong><span>تقرير حسابات المكتب</span></div><div className="doc-date">{dateAr(isoToday())}</div></div><div className="doc-meta">{clientLabel} {from?` | من ${dateAr(from)}`:''} {to?` | حتى ${dateAr(to)}`:''}</div>
-    <div className="doc-kpis"><div><span>الإيداعات</span><b>{formatMoney(m.dep)}</b></div><div><span>المصروفات</span><b>{formatMoney(m.exp)}</b></div><div><span>نسبة الإشراف</span><b>{formatMoney(m.sup)}</b></div><div><span>الرصيد</span><b>{formatMoney(m.dep-m.exp-m.sup)}</b></div></div>
+    <div className="doc-kpis"><div><span>الإيداعات</span><b>{formatMoney(m.dep)}</b></div><div><span>المصروفات</span><b>{formatMoney(m.exp)}</b></div><div><span>الإشراف المستحق</span><b>{formatMoney(due)}</b></div><div><span>الإشراف المحصّل يدويًا</span><b>{formatMoney(m.sup)}</b></div><div><span>الإشراف المتبقي</span><b>{formatMoney(outstanding)}</b></div><div><span>الرصيد بعد التحصيل</span><b>{formatMoney(m.dep-m.exp-m.sup)}</b></div></div>
     <h3>بنود المصروفات</h3><table><thead><tr><th>البند</th><th>الإجمالي</th></tr></thead><tbody>{expenses.map(r=><tr key={r.name}><td>{r.name}</td><td>{formatMoney(Math.round(r.amount*100))}</td></tr>)}{!expenses.length&&<tr><td colSpan="2">لا يوجد</td></tr>}</tbody></table>
     <h3>طرق الإيداع</h3><table><thead><tr><th>الطريقة</th><th>الإجمالي</th></tr></thead><tbody>{deposits.map(r=><tr key={r.name}><td>{r.name}</td><td>{formatMoney(Math.round(r.amount*100))}</td></tr>)}{!deposits.length&&<tr><td colSpan="2">لا يوجد</td></tr>}</tbody></table>
-    <h3>نسبة الإشراف</h3><table><thead><tr><th>العميل</th><th>المبلغ المخصوم</th></tr></thead><tbody>{rows.filter(t=>t.transaction_type==='supervision').map(t=><tr key={t.id}><td>{t.clientName} {t.supervision_source_deposit_id?'(تلقائي)':''}</td><td>{formatMoney(t.cents)}</td></tr>)}{!rows.some(t=>t.transaction_type==='supervision')&&<tr><td colSpan="2">لا توجد</td></tr>}</tbody></table>
+    <h3>تحصيل نسبة الإشراف (يدوي فقط)</h3><table><thead><tr><th>العميل</th><th>المبلغ المحصّل</th></tr></thead><tbody>{rows.filter(t=>t.transaction_type==='supervision').map(t=><tr key={t.id}><td>{t.clientName}</td><td>{formatMoney(t.cents)}</td></tr>)}{!rows.some(t=>t.transaction_type==='supervision')&&<tr><td colSpan="2">لا توجد</td></tr>}</tbody></table>
     <h3>تفاصيل المعاملات ({rows.length})</h3><table className="details-table"><thead><tr><th>التاريخ</th><th>العميل</th><th>النوع</th><th>البيان / البند</th><th>المبلغ</th></tr></thead><tbody>{rows.map(t=><tr key={t.id}><td>{dateAr(t.transaction_date)}</td><td>{t.clientName}</td><td>{t.transaction_type==='deposit'?'إيداع':t.transaction_type==='supervision'?'نسبة إشراف':'صرف'}</td><td>{t.description}{t.categoryName?` - ${t.categoryName}`:''}</td><td>{formatMoney(t.cents)}</td></tr>)}{!rows.length&&<tr><td colSpan="5">لا توجد معاملات</td></tr>}</tbody></table>
     <footer>AE Finance • تقرير مُنشأ من نظام إدارة حسابات المكتب</footer>
   </div>;
