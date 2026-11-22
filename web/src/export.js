@@ -17,9 +17,9 @@ export function groupDeposits(rows) {
     return map;
   }, {})).map(([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount);
 }
-export const reportMetrics = rows => ({ dep: Math.round(sum(rows, 'deposit') * 100), exp: Math.round(sum(rows, 'expense') * 100) });
+export const reportMetrics = rows => ({ dep: Math.round(sum(rows, 'deposit') * 100), exp: Math.round(sum(rows, 'expense') * 100), sup: Math.round(sum(rows, 'supervision') * 100) });
 const baseColumns = ['التاريخ', 'العميل', 'النوع', 'البند', 'نوع الصرف', 'طريقة الإيداع', 'المهندس المستلم', 'المهندس المسجل', 'البيان', 'المبلغ (ج.م)', 'ملاحظات'];
-const columnsFor = t => [dateAr(t.transaction_date), t.clientName, t.transaction_type === 'deposit' ? 'إيداع' : 'صرف',
+const columnsFor = t => [dateAr(t.transaction_date), t.clientName, t.transaction_type === 'deposit' ? 'إيداع' : t.transaction_type === 'supervision' ? 'نسبة إشراف' : 'صرف',
   t.categoryName, kinds[t.expense_kind] || '', methods[t.payment_method] || '', t.receivedName,
   t.recordedName, t.description, Number(t.amount || 0), t.notes || ''];
 export async function exportExcel(rows, subtitle = 'كل العملاء') {
@@ -47,11 +47,14 @@ export async function exportExcel(rows, subtitle = 'كل العملاء') {
   };
   const overview = makeSheet('الملخص', ['المؤشر', 'القيمة (ج.م)']);
   const m = reportMetrics(rows);
-  for (const values of [['إجمالي الإيداعات', m.dep / 100], ['إجمالي المصروفات', m.exp / 100], ['الرصيد', (m.dep - m.exp) / 100], ['عدد المعاملات', rows.length]]) overview.addRow(values);
+  for (const values of [['إجمالي الإيداعات', m.dep / 100], ['إجمالي المصروفات', m.exp / 100], ['نسبة الإشراف المحصلة', m.sup / 100], ['الرصيد بعد الإشراف', (m.dep - m.exp - m.sup) / 100], ['عدد المعاملات', rows.length]]) overview.addRow(values);
   const expSheet = makeSheet('بنود المصروفات', ['بند المصروف', 'الإجمالي (ج.م)']);
   for (const g of groupExpenses(rows)) expSheet.addRow([g.name, g.amount]);
   const depSheet = makeSheet('طرق الإيداع', ['طريقة الإيداع', 'الإجمالي (ج.م)']);
   for (const g of groupDeposits(rows)) depSheet.addRow([g.name, g.amount]);
+  const feeSheet = makeSheet('نسبة الإشراف', ['التاريخ','العميل','نوع التسجيل','المبلغ (ج.م)']);
+  for (const t of rows.filter(t => t.transaction_type === 'supervision'))
+    feeSheet.addRow([dateAr(t.transaction_date),t.clientName,t.supervision_source_deposit_id?'احتساب تلقائي':'خصم يدوي',Number(t.amount)]);
   const details = makeSheet('كل المعاملات', baseColumns);
   for (const t of [...rows].reverse()) details.addRow(columnsFor(t));
   for (const sheet of workbook.worksheets) {
