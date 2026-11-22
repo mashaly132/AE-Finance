@@ -12,7 +12,9 @@
     "@supabase/supabase-js": "2.57.0",
     "lucide-react": "0.468.0",
     "react": "19.1.0",
-    "react-dom": "19.1.0"
+    "react-dom": "19.1.0",
+    "exceljs": "4.4.0",
+    "html2pdf.js": "0.14.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "4.7.0",
