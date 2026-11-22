@@ -26,10 +26,53 @@ const tabs = [
   { label:'الإعدادات', Icon:Settings }
 ];
 
+const BRAND_CACHE_KEY = 'ae-finance-brand-logo';
+function savedBrand() {
+  try {
+    const cached = window.localStorage.getItem(BRAND_CACHE_KEY);
+    return cached && /^data:image\/(png|jpeg|webp);base64,/.test(cached) ? cached : logoAsset;
+  } catch { return logoAsset; }
+}
 function Logo({ className='', size='large' }) {
-  // Render the actual logo image unchanged: no canvas processing or CSS filters.
+  const [src,setSrc] = useState(savedBrand);
+  useEffect(() => {
+    let mounted = true;
+    let request = 0;
+    async function refreshBrand() {
+      const currentRequest = ++request;
+      if (!supabase) return;
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return; // Private storage is never read anonymously.
+        const { data:setting,error:settingError } = await supabase.from('app_settings')
+          .select('setting_value').eq('setting_key','brand_logo_path').maybeSingle();
+        if (settingError) throw settingError;
+        const path = setting?.setting_value?.path;
+        if (!path || !/^branding\/(?:logo_[a-zA-Z0-9._-]+|ae_logo)\.(?:png|jpe?g|webp)$/.test(path)) return;
+        const { data:blob,error:downloadError } = await supabase.storage.from('ae-branding').download(path);
+        if (downloadError) throw downloadError;
+        if (!blob || !mounted || currentRequest !== request) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (!mounted || currentRequest !== request || typeof reader.result !== 'string') return;
+          if (!/^data:image\/(png|jpeg|webp);base64,/.test(reader.result)) return;
+          setSrc(reader.result);
+          try { window.localStorage.setItem(BRAND_CACHE_KEY,reader.result); } catch {}
+        };
+        reader.readAsDataURL(blob);
+      } catch (err) {
+        console.warn('Brand logo: the saved image could not be loaded; using the fallback image.',err);
+      }
+    }
+    refreshBrand();
+    window.addEventListener('ae-finance:brand-logo-updated',refreshBrand);
+    return () => {
+      mounted = false; ++request;
+      window.removeEventListener('ae-finance:brand-logo-updated',refreshBrand);
+    };
+  }, []);
   return <span className={`brand-frame brand-${size} ${className}`}>
-    <img className="brand-logo" src={logoAsset} alt="Ahmed Elsera Design Studio" />
+    <img className="brand-logo" src={src} alt="Ahmed Elsera Design Studio" decoding="async" />
   </span>;
 }
 function Button({ children, variant='primary', onClick, type='button', disabled, className='', title }) {
