@@ -27,51 +27,9 @@ const tabs = [
 ];
 
 function Logo({ className='', size='large' }) {
-  const [remote, setRemote] = useState('');
-  const [original, setOriginal] = useState('');
-  useEffect(() => {
-    // Preserve the exact original monogram; convert the white canvas to transparency.
-    // Canvas processing happens only on the original grayscale asset. An embedded
-    // transparent mark remains as a reliable offline fallback.
-    let live = true;
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      if (!live) return;
-      try {
-        const canvas = document.createElement('canvas');
-        const scale = Math.min(1, 600 / img.naturalWidth);
-        canvas.width = Math.round(img.naturalWidth * scale);
-        canvas.height = Math.round(img.naturalHeight * scale);
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        for (let i = 0; i < pixels.data.length; i += 4) {
-          const alpha = 255 - Math.min(pixels.data[i], pixels.data[i+1], pixels.data[i+2]);
-          pixels.data[i] = pixels.data[i+1] = pixels.data[i+2] = 0;
-          pixels.data[i+3] = alpha;
-        }
-        ctx.putImageData(pixels, 0, 0);
-        if (live) setOriginal(canvas.toDataURL('image/png'));
-      } catch (_) { /* Leave the embedded transparent backup visible. */ }
-    };
-    img.src = 'https://raw.githubusercontent.com/mashaly132/AE-Finance/master/assets/branding/ae_logo.png';
-    return () => { live = false; img.onload = null; };
-  }, []);
-  useEffect(() => {
-    if (!supabase) return;
-    let live = true;
-    supabase.from('app_settings').select('setting_value').eq('setting_key','brand_logo_path').maybeSingle()
-      .then(async ({ data }) => {
-        const path = data?.setting_value?.path;
-        if (!path || path === 'branding/ae_logo.png') return;
-        const {data:blob} = await supabase.storage.from('ae-branding').download(path);
-        if (live && blob) setRemote(URL.createObjectURL(blob));
-      }).catch(() => {});
-    return () => { live = false; };
-  }, []);
+  // Render the actual logo image unchanged: no canvas processing or CSS filters.
   return <span className={`brand-frame brand-${size} ${className}`}>
-    <img className="brand-logo" src={remote || original || logo} alt="Ahmed Elsera Design Studio" onError={e => { e.currentTarget.src='https://raw.githubusercontent.com/mashaly132/AE-Finance/master/assets/branding/ae_logo.png'; }} />
+    <img className="brand-logo" src={logoAsset} alt="Ahmed Elsera Design Studio" />
   </span>;
 }
 function Button({ children, variant='primary', onClick, type='button', disabled, className='', title }) {
