@@ -35,3 +35,29 @@
   .modal-actions>.btn{min-width:0;padding-inline:10px}
 }
 .settings-stack + .settings-stack{margin-top:10px}
+
+
+/* Supervision fees: responsive independent from ordinary project expenses. */
+.supervision-panel{border:1px solid #e7dbca;background:linear-gradient(140deg,#fffdf9,#fff)}
+.supervision-panel .panel-head{flex-wrap:wrap;align-items:center}
+.supervision-panel .panel-head h3{margin:0 0 5px}
+.supervision-panel .panel-head small{font-size:11px}
+.supervision-panel .panel-head .btn{font-size:12px;min-width:0}
+.supervision-summary{display:grid;grid-template-columns:1fr;gap:10px;margin:14px 0}
+.supervision-summary>div{min-width:0;border-radius:13px;padding:14px;border:1px solid #ebebea;background:#fff}
+.supervision-summary span{display:block;font-size:12px;color:var(--muted);margin-bottom:10px}
+.supervision-summary strong{display:block;font-size:clamp(16px,4.5vw,23px);color:var(--navy);direction:ltr;text-align:right;overflow-wrap:anywhere}
+.supervision-summary>div:nth-child(2){background:#eff9f3;border-color:#dceee4}
+.supervision-summary>div:nth-child(2) strong{color:var(--green)}
+.supervision-summary>div:nth-child(3){background:#fff8ed;border-color:#f5e7cf}
+.supervision-note{margin:0;padding:12px 14px;border-radius:12px;background:#f6f3ec;color:#6e5635;font-size:12px;line-height:1.9;overflow-wrap:anywhere}
+.type-caption.supervision{background:#f5ebda;color:#85612d}
+.tx-bubble.supervision{background:#f5ebda;color:#85612d}
+.tx-type.supervision{color:#986d35}
+.tx-choices button:nth-child(3):last-child{grid-column:1/-1}
+.doc-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+.doc-kpis>div{min-width:0}
+@media(min-width:640px){
+ .supervision-summary{grid-template-columns:repeat(3,minmax(0,1fr))}
+ .doc-kpis{grid-template-columns:repeat(4,minmax(0,1fr))}
+}
