@@ -2,6 +2,7 @@ import React,{useEffect,useState} from 'react';
 import {KeyRound,UserPlus,Users,ShieldCheck,ChevronLeft,Eye,EyeOff,LockKeyhole,RefreshCw} from 'lucide-react';
 import {supabase} from './data';
 import {Modal,Button,Field} from './components';
+import './account-settings.css';
 
 const cleanError=e=>e?.message||String(e||'حصل خطأ غير متوقع');
 const validUsername=u=>/^[a-z][a-z0-9_]{2,31}$/.test(u);
