@@ -150,7 +150,7 @@ export function hydrateTransactions(tx, clients, engineers, categories) {
   const c = new Map(clients.map(x => [x.id, x]));
   const e = new Map(engineers.map(x => [x.id, x]));
   const cat = new Map(categories.map(x => [x.id, x]));
-  return tx.filter(x => !x.deleted_at).map(t => ({ ...t,
+  return tx.filter(x => !x.deleted_at && !(x.transaction_type === 'supervision' && x.supervision_source_deposit_id)).map(t => ({ ...t,
     cents: Math.round(Number(t.amount) * 100), clientName: c.get(t.client_id)?.name || '',
     categoryName: cat.get(t.expense_category_id)?.name || '',
     recordedName: e.get(t.recorded_by_engineer_id)?.display_name || '',
