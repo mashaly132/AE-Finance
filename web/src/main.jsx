@@ -18,7 +18,6 @@ import './style.css';
 
 const methods = { cash:'نقدي', instapay:'InstaPay', vodafone_cash:'Vodafone Cash' };
 const kinds = { materials:'خامات', labor:'مصنعية' };
-const logo = logoAsset;
 const tabs = [
   { label:'الرئيسية', Icon:LayoutDashboard }, { label:'العملاء', Icon:Users },
   { label:'الخزينة', Icon:Wallet }, { label:'التقارير', Icon:ChartNoAxesCombined },
