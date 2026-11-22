@@ -54,21 +54,35 @@ export function parseCents(value) {
   return Number.isFinite(numeric) && numeric > 0 && numeric <= 1e9 ? Math.round(numeric * 100) : null;
 }
 const now = () => new Date().toISOString();
+export function supervisionPercent(value) {
+  const percent = Number(String(value ?? 0).trim() || 0);
+  if (!Number.isFinite(percent) || percent < 0 || percent > 100 || Math.abs(percent*100-Math.round(percent*100)) > 0.000001)
+    throw new Error('نسبة الإشراف لازم تكون من 0 إلى 100 وبحد أقصى رقمين بعد العلامة');
+  return percent;
+}
+export async function updateClientSupervision(clientId, value, engineerId) {
+  const client = await get('clients', clientId);
+  if (!client) throw new Error('العميل غير موجود');
+  const percent = supervisionPercent(value);
+  await put('clients', { ...client, supervision_percent:percent, modified_by_engineer_id:engineerId, synced:false });
+  return percent;
+}
+
 export async function makeClient(data, engineerId) {
   const obj = { id: crypto.randomUUID(), name: data.name.trim(), project_name: data.project?.trim() || null,
-    phone: data.phone?.trim() || null, notes: null, active: true, modified_by_engineer_id: engineerId, synced: false };
+    phone: data.phone?.trim() || null, notes: null, active: true, supervision_percent: supervisionPercent(data.supervisionPercent), modified_by_engineer_id: engineerId, synced: false };
   await put('clients', obj); return obj;
 }
 export async function makeTransaction(data) {
   const obj = { id: crypto.randomUUID(), client_id: data.clientId, transaction_type: data.type,
     amount: Math.round(data.cents) / 100, transaction_date: data.date,
-    description: data.description?.trim() || (data.type === 'deposit' ? 'إيداع' : ''), notes: data.notes || null,
+    description: data.type === 'supervision' ? 'نسبة إشراف' : (data.description?.trim() || (data.type === 'deposit' ? 'إيداع' : '')), notes: data.notes || null,
     expense_category_id: data.type === 'expense' ? data.categoryId : null,
     expense_kind: data.type === 'expense' ? data.kind : null,
     payment_method: data.type === 'deposit' ? data.method : null,
     received_by_engineer_id: data.type === 'deposit' ? data.recipientId : null,
     recorded_by_engineer_id: data.engineerId, modified_by_engineer_id: data.engineerId,
-    deleted_at: null, created_at: now(), idempotency_key: null, synced: false };
+    deleted_at: null, created_at: now(), idempotency_key: null, supervision_source_deposit_id:null, synced: false };
   await put('transactions', obj); return obj;
 }
 export async function updateTransaction(id, data, engineerId) {
@@ -77,7 +91,7 @@ export async function updateTransaction(id, data, engineerId) {
   // Never spread hydrated UI rows into database payloads; keep stable ID, author and creation time.
   const changed = {
     ...previous, transaction_type: data.type, amount: Math.round(data.cents) / 100,
-    transaction_date: data.date, description: data.description?.trim() || (data.type === 'deposit' ? 'إيداع' : ''),
+    transaction_date: data.date, description: data.type === 'supervision' ? 'نسبة إشراف' : (data.description?.trim() || (data.type === 'deposit' ? 'إيداع' : '')),
     notes: data.notes?.trim() || null,
     expense_category_id: data.type === 'expense' ? data.categoryId : null,
     expense_kind: data.type === 'expense' ? data.kind : null,
@@ -97,8 +111,8 @@ export async function pendingCount() {
   return clients.filter(x => !x.synced).length + transactions.filter(x => !x.synced).length;
 }
 const fields = {
-  clients: 'id,name,project_name,phone,notes,active,modified_by_engineer_id',
-  transactions: 'id,client_id,transaction_type,amount,transaction_date,description,notes,expense_category_id,expense_kind,payment_method,received_by_engineer_id,recorded_by_engineer_id,modified_by_engineer_id,deleted_at,created_at,idempotency_key',
+  clients: 'id,name,project_name,phone,notes,active,supervision_percent,modified_by_engineer_id',
+  transactions: 'id,client_id,transaction_type,amount,transaction_date,description,notes,expense_category_id,expense_kind,payment_method,received_by_engineer_id,recorded_by_engineer_id,modified_by_engineer_id,deleted_at,created_at,idempotency_key,supervision_source_deposit_id',
   engineers: 'id,display_name,active', expense_categories: 'id,name,sort_order,active'
 };
 async function pullTable(table) {
@@ -146,7 +160,7 @@ export function hydrateTransactions(tx, clients, engineers, categories) {
 export function csvReport(tx) {
   const q = value => `"${String(value ?? '').replaceAll('"', '""')}"`;
   const columns = 'التاريخ,العميل,النوع,البند,نوع الصرف,طريقة الإيداع,المستلم,سجّله,البيان,المبلغ,ملاحظات';
-  return '\uFEFF' + [columns, ...[...tx].reverse().map(t => [t.transaction_date, q(t.clientName), t.transaction_type === 'deposit' ? 'إيداع' : 'صرف',
+  return '\uFEFF' + [columns, ...[...tx].reverse().map(t => [t.transaction_date, q(t.clientName), t.transaction_type === 'deposit' ? 'إيداع' : t.transaction_type === 'supervision' ? 'نسبة إشراف' : 'صرف',
     q(t.categoryName), t.expense_kind === 'materials' ? 'خامات' : t.expense_kind === 'labor' ? 'مصنعية' : '',
     ({ cash: 'نقدي', instapay: 'InstaPay', vodafone_cash: 'Vodafone Cash' })[t.payment_method] || '',
     q(t.receivedName), q(t.recordedName), q(t.description), Number(t.amount).toFixed(2), q(t.notes)].join(','))].join('\r\n');
