@@ -75,14 +75,20 @@ function App() {
     const deposits=entries.filter(t=>t.transaction_type==='deposit');
     const dep=deposits.reduce((sum,t)=>sum+t.cents,0);
     const exp=entries.filter(t=>t.transaction_type==='expense').reduce((sum,t)=>sum+t.cents,0);
-    const supPaid=entries.filter(t=>t.transaction_type==='supervision').reduce((sum,t)=>sum+t.cents,0);
+    // Supervision is accrued on expenses; collection happens only via manual entries.
+    const supPaid=entries.filter(t=>t.transaction_type==='supervision'&&!t.supervision_source_deposit_id).reduce((sum,t)=>sum+t.cents,0);
     const rate=Number(c.supervision_percent)||0;
-    const supDue=deposits.reduce((sum,t)=>sum+Math.round(t.cents*rate/100),0);
-    return {...c,dep,exp,supPaid,supDue,supRemaining:Math.max(0,supDue-supPaid),balance:dep-exp-supPaid};
+    const supDue=Math.round(exp*rate/100);
+    return {...c,dep,exp,supPaid,supDue,supRemaining:Math.max(0,supDue-supPaid),supOverpaid:Math.max(0,supPaid-supDue),balance:dep-exp-supPaid};
   }).sort((a,b)=>a.name.localeCompare(b.name,'ar')),[clients,rows]);
   const summary=reportMetrics(rows);
   const filteredReport=useMemo(()=>rows.filter(t=>(!reportClient||t.client_id===reportClient)&&(!from||t.transaction_date>=from)&&(!to||t.transaction_date<=to)),[rows,reportClient,from,to]);
   const report=reportMetrics(filteredReport),expenseGroups=groupExpenses(filteredReport),depositGroups=groupDeposits(filteredReport);
+  const reportSupDue=clients.reduce((sum,c)=>{
+    const spent=filteredReport.filter(t=>t.client_id===c.id && t.transaction_type==='expense').reduce((n,t)=>n+t.cents,0);
+    return sum+Math.round(spent*(Number(c.supervision_percent)||0)/100);
+  },0);
+  const reportSupRemaining=Math.max(0,reportSupDue-report.sup);
   const clientLabel=reportClient?clients.find(c=>c.id===reportClient)?.name||'عميل':'كل العملاء';
   const activeCategories=categories.filter(c=>c.active),activeEngineers=engineers.filter(e=>e.active);
   const latestRows=rows.slice(0,6);
@@ -96,7 +102,7 @@ function App() {
       const newRate=await updateClientSupervision(activeClient.id,value,engineer.id);
       setModal(null);await refresh();
       if(navigator.onLine){await sync();await refresh();}
-      else notify('نسبة الإشراف اتسجلت محليًا، والإيداعات السابقة هيتعاد حسابها بعد المزامنة');
+      else notify('نسبة الإشراف اتسجلت محليًا. المستحق بيتحسب من المصروفات، والتحصيل يدوي فقط.');
       return newRate;
     }finally{setBusy(false);}
   }
@@ -128,7 +134,7 @@ function App() {
       else await makeTransaction({...data,cents,clientId:selectedClient.id,engineerId:engineer.id});
       setModal(null);await refresh();doSync();
     }catch(e){alert(e.message)}finally{setBusy(false);}}
-  async function deleteTx(t){if(t.supervision_source_deposit_id){alert('رسوم الإشراف دي محسوبة تلقائيًا من إيداع. عدّل الإيداع أو نسبة الإشراف بدل حذفها.');return;}if(!window.confirm(`متأكد من حذف العملية «${t.description}» بمبلغ ${formatMoney(t.cents)}؟`))return;
+  async function deleteTx(t){if(t.supervision_source_deposit_id){alert('دي معاملة قديمة مُلغاة تم إنشاؤها تلقائيًا.');return;}if(!window.confirm(`متأكد من حذف العملية «${t.description}» بمبلغ ${formatMoney(t.cents)}؟`))return;
     try{await removeTransaction(t,engineer.id);await refresh();doSync();}catch(e){alert(e.message);}}
   async function saveLookup(table,name){if(!name.trim())return;
     const payload=table==='engineers'?{display_name:name.trim()}:{name:name.trim(),sort_order:Math.max(0,...categories.map(c=>c.sort_order))+1};
@@ -161,7 +167,7 @@ function App() {
   }catch(e){alert('حصل خطأ أثناء تجهيز التقرير: '+e.message);}finally{setExporting(false);}}
   const txnList=(list)=><div className="transactions-list">{list.length?list.map(t=><article className="tx-card" key={t.id}><span className={`tx-bubble ${t.transaction_type}`}>
     {t.transaction_type==='deposit'?<ArrowDownLeft size={20}/>:<ArrowUpRight size={20}/>}</span>
-    <div className="tx-content"><strong>{t.description||'إيداع'}</strong><small>{dateAr(t.transaction_date)} • {t.clientName} {t.categoryName?`• ${t.categoryName}`:''}</small><span className={`tx-type ${t.transaction_type}`}>{t.transaction_type==='deposit'?'إيداع':t.transaction_type==='supervision'?'نسبة إشراف':'مصروف'}{t.supervision_source_deposit_id?' · احتساب تلقائي':''}{!t.synced?' · لم تتم المزامنة':''}</span></div>
+    <div className="tx-content"><strong>{t.description||'إيداع'}</strong><small>{dateAr(t.transaction_date)} • {t.clientName} {t.categoryName?`• ${t.categoryName}`:''}</small><span className={`tx-type ${t.transaction_type}`}>{t.transaction_type==='deposit'?'إيداع':t.transaction_type==='supervision'?'نسبة إشراف':'مصروف'}{!t.synced?' · لم تتم المزامنة':''}</span></div>
     <div className="tx-end"><strong className={t.transaction_type==='deposit'?'positive':'negative'} dir="ltr">{t.transaction_type==='deposit'?'+':'-'}{formatMoney(t.cents)}</strong><div className="tx-actions">{!t.supervision_source_deposit_id&&<><IconButton title="تعديل" onClick={()=>{setSelectedClient(clients.find(c=>c.id===t.client_id));setModal({type:'tx',txType:t.transaction_type,item:t});}}><Pencil size={17}/></IconButton><IconButton title="حذف" danger onClick={()=>deleteTx(t)}><Trash2 size={17}/></IconButton></>}</div></div>
   </article>):<Empty message="مفيش معاملات في الجزء ده" Icon={Receipt}/>}</div>;
   if(!configured)return <div className="config-error"><AlertCircle size={30}/><h2>بيانات اتصال Supabase ناقصة</h2><p>راجع إعدادات Vercel الخاصة بالمشروع.</p></div>;
@@ -179,13 +185,13 @@ function App() {
       {selectedClient&&activeClient?<><div className="section-heading"><button className="backlink" onClick={()=>setSelectedClient(null)}><ArrowRight size={17}/> العملاء</button><div><h2>{activeClient.name}</h2><p>{activeClient.project_name||'حساب العميل'}</p></div><Button className="desktop-inline" onClick={()=>setModal({type:'chooseTx'})}><Plus size={18}/> معاملة جديدة</Button></div>
         <div className="metrics-grid"><MoneyCard label="الإيداعات" cents={clientMetrics.dep} kind="green" Icon={ArrowDownLeft}/><MoneyCard label="المصروفات" cents={clientMetrics.exp} kind="red" Icon={ArrowUpRight}/><MoneyCard label="نسبة الإشراف المحصلة" cents={activeClient.supPaid} Icon={Wallet}/><MoneyCard label="الرصيد بعد الإشراف" cents={activeClient.balance} Icon={Wallet}/></div>
         <section className="panel supervision-panel" aria-label="ملخص نسبة الإشراف">
-          <div className="panel-head"><div><h3>نسبة الإشراف — {Number(activeClient.supervision_percent||0).toLocaleString('en-US')}%</h3><small>بتتحسب على إجمالي إيداعات العميل</small></div><Button variant="outline" onClick={()=>setModal({type:'supervisionRate'})}><Pencil size={16}/> تعديل النسبة</Button></div>
+          <div className="panel-head"><div><h3>نسبة الإشراف — {Number(activeClient.supervision_percent||0).toLocaleString('en-US')}%</h3><small>بتتحسب على إجمالي مصروفات العميل</small></div><Button variant="outline" onClick={()=>setModal({type:'supervisionRate'})}><Pencil size={16}/> تعديل النسبة</Button></div>
           <div className="supervision-summary">
             <div><span>الإشراف المستحق حتى الآن</span><strong>{formatMoney(activeClient.supDue)}</strong></div>
             <div><span>الإشراف المحصّل بالفعل</span><strong>{formatMoney(activeClient.supPaid)}</strong></div>
-            <div><span>المتبقي من الإشراف</span><strong>{formatMoney(activeClient.supRemaining)}</strong></div>
+            <div><span>المتبقي من الإشراف</span><strong>{formatMoney(activeClient.supRemaining)}</strong>{activeClient.supOverpaid>0&&<small>زيادة تحصيل: {formatMoney(activeClient.supOverpaid)}</small>}</div>
           </div>
-          <p className="supervision-note">كل إيداع جديد بيتحسب عليه إشراف تلقائيًا، وينزل في حركة حساب العميل ويتخصم من رصيده مرة واحدة.</p>
+          <p className="supervision-note">المستحق بيتحسب كنسبة من المصروفات فقط. مش هيتخصم ولا هيتسجل كمحصّل تلقائيًا؛ لما تستلم الإشراف، سجّل معاملة «نسبة إشراف» بالمبلغ والتاريخ.</p>
         </section>
         <div className="panel"><div className="panel-head"><h3>حركة حساب العميل</h3><span>{clientRows.length} معاملة</span></div>{txnList(clientRows)}</div><Button className="mobile-add" onClick={()=>setModal({type:'chooseTx'})}><Plus size={17}/> معاملة جديدة</Button>
       </>:tab===0?<><div className="welcome-block"><div><span className="eyebrow light">نظرة عامة</span><h2>أهلًا يا {engineer.display_name.split(' ').pop()} 👋</h2><p>كل حسابات المكتب، في صورة واضحة.</p></div><div className="welcome-decoration"><TrendingUp size={54}/></div></div>
@@ -201,7 +207,7 @@ function App() {
         <div className="dashboard-grid"><section className="panel"><div className="panel-head"><h3>الإيداعات حسب الطريقة</h3></div><ChartRows rows={groupDeposits(rows)}/></section><section className="panel"><div className="panel-head"><h3>المبالغ المستلمة حسب المهندس</h3></div><ChartRows rows={engineers.map(e=>({name:e.display_name,amount:rows.filter(t=>t.transaction_type==='deposit'&&t.received_by_engineer_id===e.id).reduce((s,t)=>s+t.amount,0)})).filter(x=>x.amount>0)}/></section></div><section className="panel"><div className="panel-head"><h3>جميع المعاملات</h3></div>{txnList(rows)}</section>
       </>:tab===3?<><div className="section-heading"><div><h2>التقارير المالية</h2><p>لوحة تحليل كاملة بالتفاصيل والبنود</p></div><span className="subdued-pill"><CalendarDays size={16}/>{filteredReport.length} معاملة</span></div>
         <div className="panel filters-panel"><Select label="العميل" value={reportClient} onChange={setReportClient} blank="كل العملاء" items={customerBalances.map(c=>({id:c.id,label:c.name}))}/><Field label="من تاريخ" value={from} onChange={setFrom} type="date"/><Field label="إلى تاريخ" value={to} onChange={setTo} type="date"/><Button variant="ghost" onClick={()=>{setReportClient('');setFrom('');setTo('');}}>مسح الفلاتر</Button></div>
-        <div className="metrics-grid"><MoneyCard label="إجمالي الإيداعات" cents={report.dep} kind="green" Icon={ArrowDownLeft}/><MoneyCard label="إجمالي المصروفات" cents={report.exp} kind="red" Icon={ArrowUpRight}/><MoneyCard label="صافي الرصيد بعد الإشراف" cents={report.dep-report.exp-report.sup} Icon={Wallet}/></div>
+        <div className="metrics-grid"><MoneyCard label="إجمالي الإيداعات" cents={report.dep} kind="green" Icon={ArrowDownLeft}/><MoneyCard label="إجمالي المصروفات" cents={report.exp} kind="red" Icon={ArrowUpRight}/><MoneyCard label="إشراف مستحق" cents={reportSupDue} Icon={Wallet}/><MoneyCard label="إشراف محصّل يدويًا" cents={report.sup} kind="green" Icon={Wallet}/><MoneyCard label="إشراف متبقٍ" cents={reportSupRemaining} Icon={Wallet}/><MoneyCard label="صافي الرصيد بعد التحصيل" cents={report.dep-report.exp-report.sup} Icon={Wallet}/></div>
         <div className="report-tabs" role="tablist" aria-label="أقسام التقارير">{[['expenses','بنود المصروفات'],['deposits','طرق الإيداع'],['clients','حسب العملاء'],['supervision','نسبة الإشراف'],['transactions','المعاملات']].map(([id,label])=><button type="button" role="tab" aria-selected={reportView===id} className={reportView===id?'selected':''} key={id} onClick={()=>setReportView(id)}>{label}</button>)}</div>
         <section className="panel report-panel"><div className="panel-head"><h3>{{expenses:'المصروفات حسب البند',deposits:'الإيداعات حسب الطريقة',clients:'الملخص حسب العميل',supervision:'معاملات نسبة الإشراف',transactions:'جميع المعاملات'}[reportView]}</h3></div>
           {reportView==='expenses'?<ChartRows rows={expenseGroups}/>:reportView==='deposits'?<ChartRows rows={depositGroups}/>:reportView==='clients'?<div className="client-report-list">{customerBalances.map(c=>{const r=filteredReport.filter(t=>t.client_id===c.id),m=reportMetrics(r);return r.length?<div key={c.id}><span>{c.name}</span><b dir="ltr">{formatMoney(m.dep-m.exp-m.sup)}</b></div>:null})}</div>:txnList(reportView==='supervision'?filteredReport.filter(t=>t.transaction_type==='supervision'):filteredReport)}
