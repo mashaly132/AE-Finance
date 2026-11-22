@@ -1,68 +1,177 @@
-import React,{useCallback,useEffect,useMemo,useState} from 'react';
-import{createRoot}from'react-dom/client';
-import{Users,Wallet,ChartNoAxesCombined,Settings,Cloud,CloudOff,RefreshCw,Plus,ArrowRight,Trash2,LogOut,Upload,Search,ChevronLeft,CheckCircle,Image as ImageIcon,UserRound,Tags,X,Download}from'lucide-react';
-import{all,csvReport,dateAr,formatMoney,hydrateTransactions,isoToday,makeClient,makeTransaction,parseCents,pendingCount,put,removeTransaction,supabase,sync,wipe,configured,setActiveUser}from'./data';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import {
+  LayoutDashboard, Users, Wallet, ChartNoAxesCombined, Settings, LockKeyhole, UserRound,
+  ShieldCheck, ArrowLeft, ArrowRight, ArrowDownLeft, ArrowUpRight, Check, ChevronLeft,
+  Cloud, CloudOff, RefreshCw, Plus, Search, Pencil, Trash2, LogOut, Download,
+  FileSpreadsheet, FileText, X, CalendarDays, Image as ImageIcon, Tags, Receipt,
+  Layers, CreditCard, TrendingUp, Menu, Eye, EyeOff, AlertCircle, CircleHelp, KeyRound
+} from 'lucide-react';
+import {
+  all, dateAr, formatMoney, hydrateTransactions, isoToday, makeClient, makeTransaction,
+  parseCents, pendingCount, removeTransaction, updateTransaction, officeEmail,
+  officeUsername, supabase, sync, wipe, configured, setActiveUser,
+  getPinStatuses, setEngineerPin, verifyEngineerPin
+} from './data';
+import { exportExcel, exportPdf, groupExpenses, groupDeposits, reportMetrics } from './export';
 import './style.css';
-const methods={cash:'نقدي',instapay:'InstaPay',vodafone_cash:'Vodafone Cash'},kinds={materials:'خامات',labor:'مصنعية'};
-const logo='https://raw.githubusercontent.com/ahmedzayed4596/AE-Finance/master/assets/branding/ae_logo.png';
-function Logo({height=120}){const [path,setPath]=useState(null);useEffect(()=>{if(!supabase)return;supabase.from('app_settings').select('setting_value').eq('setting_key','brand_logo_path').maybeSingle().then(async({data})=>{const p=data?.setting_value?.path;if(p&&p!=='branding/ae_logo.png'){const {data:blob}=await supabase.storage.from('ae-branding').download(p);if(blob)setPath(URL.createObjectURL(blob));}}).catch(()=>{});},[]);return <img className="logo" src={path||logo} alt="AE Finance" style={{maxHeight:height}} onError={e=>{e.currentTarget.style.display='none';}}/>;}
-function Button({children,onClick,outline=false,disabled=false,className='',type='button'}){return <button type={type} className={(outline?'outline ':'primary ')+className} disabled={disabled} onClick={onClick}>{children}</button>}
-function Field({label,value,onChange,type='text',required=false,children,placeholder}){return <label className="field"><span>{label}</span>{children||<input type={type} value={value||''} required={required} placeholder={placeholder||''} onChange={e=>onChange(e.target.value)}/>}</label>}
-function Select({label,value,onChange,items,required=false,blank='اختار'}){return <Field label={label}><select value={value||''} required={required} onChange={e=>onChange(e.target.value)}><option value="">{blank}</option>{items.map(x=><option key={x.id} value={x.id}>{x.label}</option>)}</select></Field>}
-function Stat({label,cents,color}){return <div className="stat"><small>{label}</small><strong style={{color}}>{formatMoney(cents)}</strong></div>}
-function Modal({title,onClose,children}){return <div className="overlay" onMouseDown={e=>e.target===e.currentTarget&&onClose()}><section className="modal"><header><h2>{title}</h2><button className="iconbutton" onClick={onClose}><X size={20}/></button></header>{children}</section></div>}
-function App(){const [session,setSession]=useState(undefined),[approved,setApproved]=useState(undefined),[screen,setScreen]=useState('welcome'),[engineer,setEngineer]=useState(null),[tab,setTab]=useState(0),[modal,setModal]=useState(null),[clients,setClients]=useState([]),[transactions,setTransactions]=useState([]),[engineers,setEngineers]=useState([]),[categories,setCategories]=useState([]),[online,setOnline]=useState(navigator.onLine),[busy,setBusy]=useState(false),[error,setError]=useState(''),[pending,setPending]=useState(0),[lastSync,setLastSync]=useState(''),[selectedClient,setSelectedClient]=useState(null),[query,setQuery]=useState(''),[reportClient,setReportClient]=useState(''),[from,setFrom]=useState(''),[to,setTo]=useState('');
-const refresh=useCallback(async()=>{try{const [c,t,e,k,p]=await Promise.all([all('clients'),all('transactions'),all('engineers'),all('expense_categories'),pendingCount()]);setClients(c);setTransactions(t);setEngineers(e);setCategories(k.sort((a,b)=>a.sort_order-b.sort_order));setPending(p);}catch(e){setError(e.message);}},[]);
-const doSync=useCallback(async()=>{if(!supabase||!navigator.onLine)return;setBusy(true);try{await sync();await refresh();const d=new Date().toLocaleString('ar-EG');setLastSync(d);setError('');}catch(e){setError(e.message||String(e));}finally{setBusy(false);}},[refresh]);
-// A restored session alone is not authorization: the server checks office_members.
-useEffect(()=>{if(!supabase){setSession(null);return;}let live=true;
-  supabase.auth.getSession().then(({data,error})=>{if(live)setSession(error?null:data.session);}).catch(()=>{if(live)setSession(null);});
-  const {data:{subscription}}=supabase.auth.onAuthStateChange((_event,s)=>{if(live)setSession(s);});
-  const onOnline=()=>setOnline(true),onOffline=()=>setOnline(false);
-  window.addEventListener('online',onOnline);window.addEventListener('offline',onOffline);
-  return()=>{live=false;subscription.unsubscribe();window.removeEventListener('online',onOnline);window.removeEventListener('offline',onOffline);};
-},[]);
-useEffect(()=>{const userId=session?.user?.id;if(!userId){setApproved(undefined);setActiveUser(null);return;}
- let live=true;setApproved(undefined);setEngineer(null);setScreen('welcome');setActiveUser(userId);
- (async()=>{if(!navigator.onLine){const allowed=localStorage.getItem('ae_office_allowed_'+userId)==='yes';if(live)setApproved(allowed);return;}
-   try{const {data,error}=await supabase.from('office_members').select('user_id').eq('user_id',userId).eq('active',true).maybeSingle();
-     if(error)throw error;const allowed=!!data;
-     if(allowed)localStorage.setItem('ae_office_allowed_'+userId,'yes');else localStorage.removeItem('ae_office_allowed_'+userId);
-     if(live)setApproved(allowed);
-   }catch(e){if(live){setError(e.message||String(e));setApproved(false);}}
- })();return()=>{live=false;};
-},[session?.user?.id]);
-useEffect(()=>{if(approved!==true||!session?.user?.id)return;refresh();doSync();},[approved,session?.user?.id,refresh,doSync]);
-useEffect(()=>{if(approved!==true)return;const onOnline=()=>doSync();window.addEventListener('online',onOnline);return()=>window.removeEventListener('online',onOnline);},[approved,doSync]);
-const rows=useMemo(()=>hydrateTransactions(transactions,clients,engineers,categories),[transactions,clients,engineers,categories]);const activeClients=clients.filter(x=>x.active);const customerBalances=useMemo(()=>activeClients.map(c=>{const tx=rows.filter(t=>t.client_id===c.id);const dep=tx.filter(t=>t.transaction_type==='deposit').reduce((s,t)=>s+t.cents,0);const exp=tx.filter(t=>t.transaction_type==='expense').reduce((s,t)=>s+t.cents,0);return {...c,dep,exp,balance:dep-exp};}).sort((a,b)=>a.name.localeCompare(b.name,'ar')),[clients,rows]);
-const totals=list=>{const dep=list.filter(x=>x.transaction_type==='deposit').reduce((s,x)=>s+x.cents,0),exp=list.filter(x=>x.transaction_type==='expense').reduce((s,x)=>s+x.cents,0);return {dep,exp};};
-async function saveClient(data){if(!data.name?.trim())return alert('اكتب اسم العميل');try{if(clients.some(c=>c.active&&c.name.toLowerCase()===data.name.trim().toLowerCase())&&!confirm('في عميل بنفس الاسم. تضيفه برضه؟'))return;await makeClient(data,engineer.id);setModal(null);await refresh();doSync();}catch(e){alert(e.message);}}
-async function saveTx(data){const cents=parseCents(data.amount);if(!cents||data.type==='expense'&&(!data.categoryId||!data.kind||!data.description.trim())||data.type==='deposit'&&(!data.method||!data.recipientId)){alert('راجع الحقول المطلوبة والمبلغ');return;}try{await makeTransaction({...data,cents,engineerId:engineer.id,clientId:selectedClient.id});setModal(null);await refresh();doSync();}catch(e){alert(e.message);}}
-async function deleteTx(t){if(!confirm(`هتتحذف "${t.description}" بمبلغ ${formatMoney(t.cents)}. متأكد؟`))return;await removeTransaction(t,engineer.id);await refresh();doSync();}
-async function signOut(){const n=await pendingCount();if(n){alert(`فيه ${n} عملية لسه متزامنتش. اتصل بالنت وزامن الأول.`);return;}if(!confirm('هيتمسح اللي متخزن على الجهاز ده. متأكد؟'))return;await wipe();await supabase.auth.signOut();setEngineer(null);setScreen('welcome');await refresh();}
-async function saveLookup(table,name){if(!name.trim())return;const data=table==='engineers'?{display_name:name.trim()}:{name:name.trim(),sort_order:Math.max(0,...categories.map(x=>x.sort_order))+1};const{error}=await supabase.from(table).insert(data);if(error)throw error;await doSync();}
-async function toggleLookup(table,id,value){const {error}=await supabase.from(table).update({active:value}).eq('id',id);if(error)alert(error.message);else await doSync();}
-async function uploadLogo(file){if(!file)return;const path=`branding/logo_${Date.now()}.${file.name.split('.').pop().toLowerCase()}`;const {error:a}=await supabase.storage.from('ae-branding').upload(path,file);if(a)return alert(a.message);const {error:b}=await supabase.from('app_settings').upsert({setting_key:'brand_logo_path',setting_value:{path},updated_by:engineer.id});if(b)return alert(b.message);window.location.reload();}
-function exportCsv(list){const blob=new Blob([csvReport(list)],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`ae_finance_report_${isoToday()}.csv`;a.click();URL.revokeObjectURL(url);}
-if(!configured)return <div className="auth"><h2>إعدادات Supabase ناقصة</h2><p>أضف VITE_SUPABASE_URL و VITE_SUPABASE_PUBLISHABLE_KEY في متغيرات البيئة.</p></div>;
-if(session===undefined)return <div className="auth">جارٍ التحميل...</div>;
-if(!session)return <Login onSubmit={async(email,password)=>{const{error}=await supabase.auth.signInWithPassword({email,password});if(error)throw error;}}/>;
-if(approved===undefined)return <div className="auth"><Logo height={100}/><p>بنراجع صلاحية حساب المكتب...</p></div>;
-if(!approved)return <div className="auth"><Logo height={110}/><h2>الحساب غير مفعّل</h2><p>الحساب ده مش مضاف إلى أعضاء مكتب AE Finance. تواصل مع مسؤول المكتب عشان يفعّله في Supabase.</p>{error&&<p role="alert" className="red">{error}</p>}<Button onClick={()=>supabase.auth.signOut()}>تسجيل الخروج</Button></div>;
-if(screen==='welcome'||!engineer)return <div className="auth"><Logo height={170}/><h1>أزيك يا هندسة 👋</h1><p>اختار أنت مين عشان نبدأ شغلنا</p>{engineers.filter(x=>x.active).map(e=><button className={'choice '+(engineer?.id===e.id?'chosen':'')} key={e.id} onClick={()=>setEngineer(e)}><UserRound size={20}/>{e.display_name}{engineer?.id===e.id&&<CheckCircle size={18}/>}</button>)}{!engineers.length&&<p>{busy?'بنحمّل البيانات...':error||'محتاجين نتصل بالنت أول مرة لتحميل البيانات'}</p>}<Button outline onClick={doSync} disabled={busy}><RefreshCw size={16}/> إعادة المحاولة</Button><Button onClick={()=>engineer&&setScreen('home')} disabled={!engineer}>دخول إلى البرنامج</Button></div>;
-const filteredReport=rows.filter(t=>(!reportClient||t.client_id===reportClient)&&(!from||t.transaction_date>=from)&&(!to||t.transaction_date<=to));const report=totals(filteredReport);const treasury=totals(rows);
-return <div className="app"><header className="topbar"><b>AE Finance</b><div className="top-actions"><button title="مزامنة" onClick={doSync} className="iconbutton light">{busy?<RefreshCw className="spin"/>:online?<Cloud/>:<CloudOff/>}{pending>0&&<sup>{pending}</sup>}</button><button className="switcher" onClick={()=>setScreen('welcome')}>↔ {engineer.display_name}</button></div></header>
-<main className="page">{selectedClient?<><div className="titlebar"><button className="iconbutton" onClick={()=>setSelectedClient(null)}><ArrowRight/></button><h2>{selectedClient.name}</h2></div>{(()=>{const list=rows.filter(t=>t.client_id===selectedClient.id),v=totals(list);return <><div className="stats"><Stat label="الإيداعات" cents={v.dep} color="#2e7d32"/><Stat label="المصروفات" cents={v.exp} color="#c62828"/><Stat label="الرصيد" cents={v.dep-v.exp} color={v.dep-v.exp<0?'#c62828':'#142d3b'}/></div>{list.length===0?<p className="empty">مفيش معاملات لسه</p>:<div className="tx-list">{list.map(t=><article className="transaction" key={t.id}><span className={'circle '+(t.transaction_type==='deposit'?'income':'expense')}>{t.transaction_type==='deposit'?'↓':'↑'}</span><div className="tx-main"><strong>{t.description}</strong><small>{dateAr(t.transaction_date)} • {t.transaction_type==='deposit'?`${methods[t.payment_method]||''} • استلم: ${t.receivedName||'-'}`:`${t.categoryName} • ${kinds[t.expense_kind]||''}`}{!t.synced&&' ☁ لم تُزامن'}</small></div><strong className={t.transaction_type==='deposit'?'green':'red'}>{formatMoney(t.cents)}</strong><button className="iconbutton" onClick={()=>deleteTx(t)} title="حذف"><Trash2 size={17}/></button></article>)}</div>}</>})()}<button className="fab" onClick={()=>setModal({type:'chooseTx'})}><Plus size={19}/> معاملة جديدة</button></>:tab===0?<><div className="titlebar"><h2>حسابات العملاء</h2><button className="roundplus" onClick={()=>setModal({type:'client'})}><Plus/></button></div><div className="search"><Search size={18}/><input placeholder="بحث عن عميل" value={query} onChange={e=>setQuery(e.target.value)}/></div><div>{customerBalances.filter(c=>c.name.toLowerCase().includes(query.toLowerCase())||(c.project_name||'').toLowerCase().includes(query.toLowerCase())).map(c=><button className="customer" key={c.id} onClick={()=>setSelectedClient(c)}><div><strong>{c.name}</strong><small>{c.project_name||''}</small></div><span className={c.balance<0?'red':'green'}>{formatMoney(c.balance)}</span><ChevronLeft size={18}/></button>)}{!customerBalances.length&&<p className="empty">مفيش عملاء. اضغط + لإضافة عميل جديد</p>}</div></>:tab===1?<><h2>الخزينة</h2><div className="stats"><Stat label="إجمالي الإيداعات" cents={treasury.dep} color="#2e7d32"/><Stat label="إجمالي المصروفات" cents={treasury.exp} color="#c62828"/><Stat label="المتبقي" cents={treasury.dep-treasury.exp}/></div><Summary title="الإيداعات حسب الطريقة" entries={Object.entries(methods).map(([id,label])=>[label,rows.filter(t=>t.transaction_type==='deposit'&&t.payment_method===id).reduce((s,t)=>s+t.cents,0)]).filter(x=>x[1])}/><Summary title="المبالغ المستلمة حسب المهندس" entries={engineers.map(e=>[e.display_name,rows.filter(t=>t.transaction_type==='deposit'&&t.received_by_engineer_id===e.id).reduce((s,t)=>s+t.cents,0)]).filter(x=>x[1])}/></>:tab===2?<><h2>التقارير</h2><Select label="العميل" value={reportClient} onChange={setReportClient} blank="كل العملاء" items={activeClients.map(c=>({id:c.id,label:c.name}))}/><div className="dates"><Field label="من تاريخ" type="date" value={from} onChange={setFrom}/><Field label="إلى تاريخ" type="date" value={to} onChange={setTo}/></div><Button outline className="small" onClick={()=>{setFrom('');setTo('');}}>مسح التواريخ</Button><div className="stats"><Stat label="الإيداعات" cents={report.dep} color="#2e7d32"/><Stat label="المصروفات" cents={report.exp} color="#c62828"/><Stat label="الرصيد" cents={report.dep-report.exp}/></div><Summary title="المصروفات حسب البند" entries={Object.entries(filteredReport.filter(t=>t.transaction_type==='expense').reduce((m,t)=>{const k=`${t.categoryName||'-'} (${kinds[t.expense_kind]||''})`;m[k]=(m[k]||0)+t.cents;return m;},{})).sort((a,b)=>b[1]-a[1])}/><Button disabled={!filteredReport.length} onClick={()=>exportCsv(filteredReport)}><Download size={17}/> تصدير {filteredReport.length} معاملة (Excel / CSV)</Button></>:<><h2>إعدادات المكتب</h2><label className="setting"><ImageIcon/><span><strong>هوية المكتب واللوجو</strong><Logo height={45}/></span><input className="hidden" type="file" accept="image/*" onChange={e=>uploadLogo(e.target.files?.[0])}/><ChevronLeft/></label><button className="setting" onClick={()=>setModal({type:'manage',table:'engineers'})}><Users/><span><strong>المهندسون</strong><small>إضافة أو إيقاف مهندس</small></span><ChevronLeft/></button><button className="setting" onClick={()=>setModal({type:'manage',table:'expense_categories'})}><Tags/><span><strong>بنود المصروفات</strong><small>إضافة أو إيقاف البنود</small></span><ChevronLeft/></button><button className="setting" onClick={doSync}><RefreshCw/><span><strong>المزامنة والنسخ الاحتياطي</strong><small>{online?'متصل':'أوفلاين'} | عمليات معلقة: {pending}</small><small>{lastSync&&`آخر مزامنة: ${lastSync}`}</small>{error&&<small className="red">خطأ: {error}</small>}</span><ChevronLeft/></button><button className="setting" onClick={signOut}><LogOut/><span><strong>تسجيل الخروج</strong><small>{session?.user?.email}</small></span><ChevronLeft/></button></>}</main>
-{!selectedClient&&<nav className="bottomnav">{[[Users,'العملاء'],[Wallet,'الخزينة'],[ChartNoAxesCombined,'التقارير'],[Settings,'الإعدادات']].map(([Icon,label],i)=><button key={i} className={tab===i?'active':''} onClick={()=>setTab(i)}><Icon size={22}/><span>{label}</span></button>)}</nav>}
-{modal?.type==='client'&&<ClientForm onClose={()=>setModal(null)} onSave={saveClient}/>}
-{modal?.type==='chooseTx'&&<Modal title="معاملة جديدة" onClose={()=>setModal(null)}><div className="choices"><button onClick={()=>setModal({type:'tx',txType:'expense'})} className="red">↑ صرف</button><button onClick={()=>setModal({type:'tx',txType:'deposit'})} className="green">↓ إيداع</button></div></Modal>}
-{modal?.type==='tx'&&<TransactionForm client={selectedClient} type={modal.txType} onClose={()=>setModal(null)} onSave={saveTx} categories={categories.filter(c=>c.active)} engineers={engineers.filter(e=>e.active)}/>}
-{modal?.type==='manage'&&<ManageList table={modal.table} rows={modal.table==='engineers'?engineers:categories} onClose={()=>setModal(null)} add={saveLookup} toggle={toggleLookup} online={online}/>}
-</div>;
+
+const methods = { cash:'نقدي', instapay:'InstaPay', vodafone_cash:'Vodafone Cash' };
+const kinds = { materials:'خامات', labor:'مصنعية' };
+const logo = logoAsset;
+const tabs = [
+  { label:'الرئيسية', Icon:LayoutDashboard }, { label:'العملاء', Icon:Users },
+  { label:'الخزينة', Icon:Wallet }, { label:'التقارير', Icon:ChartNoAxesCombined },
+  { label:'الإعدادات', Icon:Settings }
+];
+
+import { Logo, Button, IconButton, Field, Select, Modal, MoneyCard, Empty, ChartRows, AuthLogin, PinGate, TransactionForm, ClientForm, ManageList, ReportDocument } from './components';
+function App() {
+  const [session,setSession]=useState(undefined),[approved,setApproved]=useState(undefined);
+  const [engineer,setEngineer]=useState(null),[engineers,setEngineers]=useState([]),[pinStatuses,setPinStatuses]=useState([]);
+  const [clients,setClients]=useState([]),[transactions,setTransactions]=useState([]),[categories,setCategories]=useState([]);
+  const [tab,setTab]=useState(0),[selectedClient,setSelectedClient]=useState(null),[modal,setModal]=useState(null);
+  const [query,setQuery]=useState(''),[reportClient,setReportClient]=useState(''),[reportView,setReportView]=useState('expenses');
+  const [from,setFrom]=useState(''),[to,setTo]=useState(''),[busy,setBusy]=useState(false),[pinBusy,setPinBusy]=useState(false);
+  const [error,setError]=useState(''),[online,setOnline]=useState(navigator.onLine),[pending,setPending]=useState(0),[lastSync,setLastSync]=useState('');
+  const [sidebarOpen,setSidebarOpen]=useState(false),[exporting,setExporting]=useState(false);
+  const notify=message=>setError(message);
+  const loadEngineers=useCallback(async()=>{
+    if(!supabase)return;
+    try{const [people,pins]=await Promise.all([supabase.from('engineers').select('id,display_name,active').order('display_name'),getPinStatuses()]);if(people.error)throw people.error;setEngineers(people.data||[]);setPinStatuses(pins);}catch(e){notify(e.message);}
+  },[]);
+  const refresh=useCallback(async()=>{
+    try{const [c,t,e,cat,p]=await Promise.all([all('clients'),all('transactions'),all('engineers'),all('expense_categories'),pendingCount()]);setClients(c);setTransactions(t);setEngineers(e);setCategories(cat.sort((a,b)=>a.sort_order-b.sort_order));setPending(p);}catch(e){notify(e.message);}
+  },[]);
+  const doSync=useCallback(async()=>{
+    if(!supabase||!navigator.onLine)return;
+    setBusy(true);try{await sync();await refresh();setLastSync(new Date().toLocaleString('ar-EG'));setError('');}catch(e){notify(e.message);}finally{setBusy(false);}
+  },[refresh]);
+  useEffect(()=>{
+    if(!supabase){setSession(null);return;}
+    let live=true;
+    supabase.auth.getSession().then(({data,error})=>{if(live)setSession(error?null:data.session);}).catch(()=>{if(live)setSession(null);});
+    const {data:{subscription}}=supabase.auth.onAuthStateChange((_ev,s)=>{if(live)setSession(s);});
+    const onOnline=()=>setOnline(true),onOffline=()=>setOnline(false);
+    window.addEventListener('online',onOnline);window.addEventListener('offline',onOffline);
+    return()=>{live=false;subscription.unsubscribe();window.removeEventListener('online',onOnline);window.removeEventListener('offline',onOffline);};
+  },[]);
+  useEffect(()=>{
+    let live=true;const userId=session?.user?.id;
+    if(!userId){setApproved(undefined);setActiveUser(null);setEngineer(null);return;}
+    setActiveUser(userId);setApproved(undefined);setEngineer(null);
+    (async()=>{try{
+      if(!navigator.onLine)throw new Error('لازم تكون متصل بالإنترنت للتأكد من صلاحية حساب المكتب');
+      const {data,error}=await supabase.from('office_members').select('user_id').eq('user_id',userId).eq('active',true).maybeSingle();if(error)throw error;
+      if(live){setApproved(!!data);if(data)await loadEngineers();}
+    }catch(e){if(live){notify(e.message);setApproved(false);}}})();return()=>{live=false;};
+  },[session?.user?.id,loadEngineers]);
+  useEffect(()=>{if(engineer){refresh();doSync();}},[engineer?.id,refresh,doSync]);
+  useEffect(()=>{if(!engineer)return;const callback=()=>doSync();window.addEventListener('online',callback);return()=>window.removeEventListener('online',callback);},[engineer?.id,doSync]);
+  const rows=useMemo(()=>hydrateTransactions(transactions,clients,engineers,categories),[transactions,clients,engineers,categories]);
+  const customerBalances=useMemo(()=>clients.filter(c=>c.active).map(c=>{
+    const entries=rows.filter(t=>t.client_id===c.id),dep=entries.filter(t=>t.transaction_type==='deposit').reduce((s,t)=>s+t.cents,0),exp=entries.filter(t=>t.transaction_type==='expense').reduce((s,t)=>s+t.cents,0);
+    return {...c,dep,exp,balance:dep-exp};
+  }).sort((a,b)=>a.name.localeCompare(b.name,'ar')),[clients,rows]);
+  const summary=reportMetrics(rows);
+  const filteredReport=useMemo(()=>rows.filter(t=>(!reportClient||t.client_id===reportClient)&&(!from||t.transaction_date>=from)&&(!to||t.transaction_date<=to)),[rows,reportClient,from,to]);
+  const report=reportMetrics(filteredReport),expenseGroups=groupExpenses(filteredReport),depositGroups=groupDeposits(filteredReport);
+  const clientLabel=reportClient?clients.find(c=>c.id===reportClient)?.name||'عميل':'كل العملاء';
+  const activeCategories=categories.filter(c=>c.active),activeEngineers=engineers.filter(e=>e.active);
+  const latestRows=rows.slice(0,6);
+  const activeClient=selectedClient&&customerBalances.find(c=>c.id===selectedClient.id);
+  const clientRows=rows.filter(t=>t.client_id===selectedClient?.id);
+  const clientMetrics=reportMetrics(clientRows);
+  async function onLogin(username,password){
+    if(username.trim().toLowerCase()!==officeUsername.toLowerCase())throw new Error('اسم المستخدم أو كلمة المرور غير صحيحة');
+    const {error:authError}=await supabase.auth.signInWithPassword({email:officeEmail,password});
+    if(authError)throw new Error('اسم المستخدم أو كلمة المرور غير صحيحة');
+  }
+  async function onPinVerify(engineerId,pin){setPinBusy(true);try{
+    if(!navigator.onLine)throw new Error('التحقق من الـPIN يحتاج إنترنت');
+    const result=await verifyEngineerPin(engineerId,pin);
+    if(!result?.ok){if(result?.reason==='locked')throw new Error('تم إيقاف المحاولات 15 دقيقة بسبب الرقم الخاطئ');throw new Error(`PIN غير صحيح${result?.remaining!=null?`، باقي ${result.remaining} محاولات`:''}`);}
+    setEngineer(engineers.find(e=>e.id===engineerId));setTab(0);
+  }finally{setPinBusy(false);}}
+  async function onPinSetup(engineerId,pin){setPinBusy(true);try{
+    if(!navigator.onLine)throw new Error('إعداد الـPIN يحتاج إنترنت');
+    await setEngineerPin(engineerId,pin);await loadEngineers();
+  }finally{setPinBusy(false);}}
+  async function signOut(){const n=await pendingCount().catch(()=>0);if(n){alert(`فيه ${n} عملية لسه مش متزامنة. زامن الأول`);return;}if(!window.confirm('تسجيل خروج من حساب المكتب؟'))return;await wipe();await supabase.auth.signOut();setEngineer(null);}
+  async function saveClient(d){if(!d.name.trim())return;try{
+    if(clients.some(c=>c.active&&c.name.toLowerCase()===d.name.trim().toLowerCase())&&!window.confirm('فيه عميل بنفس الاسم. تضيفه؟'))return;
+    await makeClient(d,engineer.id);setModal(null);await refresh();doSync();
+  }catch(e){alert(e.message);}}
+  async function saveTx(data,id){const cents=parseCents(data.amount);if(!cents||data.type==='expense'&&(!data.categoryId||!data.kind||!data.description.trim())||data.type==='deposit'&&(!data.method||!data.recipientId)){alert('راجع الحقول المطلوبة والمبلغ');return;}
+    setBusy(true);try{
+      if(id)await updateTransaction(id,{...data,cents},engineer.id);
+      else await makeTransaction({...data,cents,clientId:selectedClient.id,engineerId:engineer.id});
+      setModal(null);await refresh();doSync();
+    }catch(e){alert(e.message)}finally{setBusy(false);}}
+  async function deleteTx(t){if(!window.confirm(`متأكد من حذف العملية «${t.description}» بمبلغ ${formatMoney(t.cents)}؟`))return;
+    try{await removeTransaction(t,engineer.id);await refresh();doSync();}catch(e){alert(e.message);}}
+  async function saveLookup(table,name){if(!name.trim())return;
+    const payload=table==='engineers'?{display_name:name.trim()}:{name:name.trim(),sort_order:Math.max(0,...categories.map(c=>c.sort_order))+1};
+    const {error:e}=await supabase.from(table).insert(payload);if(e)throw e;await doSync();}
+  async function toggleLookup(table,id,active){const {error:e}=await supabase.from(table).update({active}).eq('id',id);if(e)alert(e.message);else await doSync();}
+  async function uploadLogo(file){if(!file)return;const name=(file.name||'image.png').split('.').pop().toLowerCase();if(!['png','jpg','jpeg','webp'].includes(name))return alert('ارفع PNG أو JPG أو WEBP');
+    const path=`branding/logo_${Date.now()}.${name}`;const {error:e}=await supabase.storage.from('ae-branding').upload(path,file);if(e)return alert(e.message);
+    const {error:saveError}=await supabase.from('app_settings').upsert({setting_key:'brand_logo_path',setting_value:{path},updated_by:engineer.id});if(saveError)return alert(saveError.message);window.location.reload();}
+  async function downloadReport(format){if(!filteredReport.length)return;setExporting(true);try{
+    if(format==='xlsx')await exportExcel(filteredReport,clientLabel);
+    else await exportPdf(document.getElementById('print-report'),`AE-Finance-Report-${isoToday()}.pdf`);
+  }catch(e){alert('حصل خطأ أثناء تجهيز التقرير: '+e.message);}finally{setExporting(false);}}
+  const txnList=(list)=><div className="transactions-list">{list.length?list.map(t=><article className="tx-card" key={t.id}><span className={`tx-bubble ${t.transaction_type}`}>
+    {t.transaction_type==='deposit'?<ArrowDownLeft size={20}/>:<ArrowUpRight size={20}/>}</span>
+    <div className="tx-content"><strong>{t.description||'إيداع'}</strong><small>{dateAr(t.transaction_date)} • {t.clientName} {t.categoryName?`• ${t.categoryName}`:''}</small><span className={`tx-type ${t.transaction_type}`}>{t.transaction_type==='deposit'?'إيداع':'مصروف'}{!t.synced?' · لم تتم المزامنة':''}</span></div>
+    <div className="tx-end"><strong className={t.transaction_type==='deposit'?'positive':'negative'} dir="ltr">{t.transaction_type==='deposit'?'+':'-'}{formatMoney(t.cents)}</strong><div className="tx-actions"><IconButton title="تعديل" onClick={()=>{setSelectedClient(clients.find(c=>c.id===t.client_id));setModal({type:'tx',txType:t.transaction_type,item:t});}}><Pencil size={17}/></IconButton><IconButton title="حذف" danger onClick={()=>deleteTx(t)}><Trash2 size={17}/></IconButton></div></div>
+  </article>):<Empty message="مفيش معاملات في الجزء ده" Icon={Receipt}/>}</div>;
+  if(!configured)return <div className="config-error"><AlertCircle size={30}/><h2>بيانات اتصال Supabase ناقصة</h2><p>راجع إعدادات Vercel الخاصة بالمشروع.</p></div>;
+  if(session===undefined)return <div className="splash"><Logo size="small"/><RefreshCw className="spin" size={23}/></div>;
+  if(!session)return <AuthLogin onLogin={onLogin} busy={busy}/>;
+  if(approved===undefined)return <div className="splash"><Logo size="small"/><p>بنتأكد من صلاحية المكتب...</p><RefreshCw className="spin" size={21}/></div>;
+  if(!approved)return <div className="denied"><ShieldCheck size={30}/><h2>الحساب غير معتمد</h2><p>{error||'حسابك مش موجود ضمن أعضاء المكتب المسموح لهم.'}</p><Button onClick={()=>supabase.auth.signOut()}>تسجيل خروج</Button></div>;
+  if(!engineer)return <PinGate engineers={engineers} statuses={pinStatuses} onVerify={onPinVerify} onSetup={onPinSetup} onLogout={()=>supabase.auth.signOut()} busy={pinBusy}/>;
+  const titles=['نظرة عامة','حسابات العملاء','الخزينة','التقارير المالية','إعدادات المكتب'];
+  return <div className="shell">
+    <aside className={`sidebar ${sidebarOpen?'open':''}`}><div className="sidebar-brand"><span className="brand-monogram">AE</span><div><b>AE FINANCE</b><small>Design Studio</small></div></div><nav aria-label="التنقل الرئيسي">{tabs.map(({label,Icon},i)=><button key={i} title={label} className={`nav-item ${tab===i?'active':''}`} onClick={()=>{setTab(i);setSelectedClient(null);setSidebarOpen(false);}}><Icon size={20}/>{label}</button>)}</nav><div className="sidebar-bottom"><div className="engineer-pill"><UserRound size={18}/><span><strong>{engineer.display_name}</strong><small>حساب المكتب</small></span></div><button className="side-signout" onClick={()=>{setEngineer(null);setSelectedClient(null);}}><KeyRound size={18}/> قفل دخول المهندس</button></div></aside>
+    <div className="workarea"><header className="app-header"><div className="header-main"><IconButton title="القائمة" onClick={()=>setSidebarOpen(o=>!o)}><Menu size={21}/></IconButton><div><small>AE FINANCE / WORKSPACE</small><h1>{selectedClient?'تفاصيل العميل':titles[tab]}</h1></div></div><div className="header-actions"><span className={`network-pill ${online?'online':'offline'}`} title={online?'متصل بالإنترنت':'لا يوجد اتصال'}>{online?<Cloud size={15}/>:<CloudOff size={15}/>}<span>{online?'متصل':'أوفلاين'}</span></span><IconButton title="مزامنة البيانات" onClick={doSync} disabled={busy}><RefreshCw className={busy?'spin':''} size={19}/></IconButton><span className="header-avatar" title={engineer.display_name}><UserRound size={18}/></span></div></header>
+    {error&&<div className="app-alert"><AlertCircle size={17}/><span>{error}</span><IconButton title="إغلاق التنبيه" onClick={()=>setError('')}><X size={16}/></IconButton></div>}
+    <main className="main-content">
+      {selectedClient&&activeClient?<><div className="section-heading"><button className="backlink" onClick={()=>setSelectedClient(null)}><ArrowRight size={17}/> العملاء</button><div><h2>{activeClient.name}</h2><p>{activeClient.project_name||'حساب العميل'}</p></div><Button className="desktop-inline" onClick={()=>setModal({type:'chooseTx'})}><Plus size={18}/> معاملة جديدة</Button></div>
+        <div className="metrics-grid"><MoneyCard label="الإيداعات" cents={clientMetrics.dep} kind="green" Icon={ArrowDownLeft}/><MoneyCard label="المصروفات" cents={clientMetrics.exp} kind="red" Icon={ArrowUpRight}/><MoneyCard label="الرصيد" cents={clientMetrics.dep-clientMetrics.exp} Icon={Wallet}/></div>
+        <div className="panel"><div className="panel-head"><h3>حركة حساب العميل</h3><span>{clientRows.length} معاملة</span></div>{txnList(clientRows)}</div><Button className="mobile-add" onClick={()=>setModal({type:'chooseTx'})}><Plus size={17}/> معاملة جديدة</Button>
+      </>:tab===0?<><div className="welcome-block"><div><span className="eyebrow light">نظرة عامة</span><h2>أهلًا يا {engineer.display_name.split(' ').pop()} 👋</h2><p>كل حسابات المكتب، في صورة واضحة.</p></div><div className="welcome-decoration"><TrendingUp size={54}/></div></div>
+        <div className="metrics-grid"><MoneyCard label="إجمالي الإيداعات" cents={summary.dep} kind="green" Icon={ArrowDownLeft}/><MoneyCard label="إجمالي المصروفات" cents={summary.exp} kind="red" Icon={ArrowUpRight}/><MoneyCard label="صافي الرصيد" cents={summary.dep-summary.exp} Icon={Wallet}/></div>
+        <div className="quick-stats"><div><Users size={21}/><span><b>{customerBalances.length}</b><small>عميل نشط</small></span></div><div><Receipt size={21}/><span><b>{rows.length}</b><small>معاملة</small></span></div><div><Cloud size={21}/><span><b>{pending}</b><small>بانتظار المزامنة</small></span></div></div>
+        <div className="dashboard-grid"><section className="panel"><div className="panel-head"><h3>أحدث المعاملات</h3><button className="link-button" onClick={()=>setTab(2)}>عرض الخزينة <ChevronLeft size={15}/></button></div>{txnList(latestRows)}</section>
+          <section className="panel"><div className="panel-head"><h3>أكبر بنود المصروفات</h3><button className="link-button" onClick={()=>{setTab(3);setReportView('expenses');}}>التقرير <ChevronLeft size={15}/></button></div><ChartRows rows={groupExpenses(rows).slice(0,6)}/></section></div>
+      </>:tab===1?<><div className="section-heading"><div><h2>العملاء</h2><p>تابع أرصدة ومشروعات العملاء</p></div><Button className="desktop-inline" onClick={()=>setModal({type:'client'})}><Plus size={17}/> إضافة عميل</Button></div>
+        <div className="search-box"><Search size={20}/><input aria-label="بحث في العملاء" value={query} onChange={e=>setQuery(e.target.value)} placeholder="ابحث باسم العميل أو المشروع..."/></div>
+        <div className="customer-grid">{customerBalances.filter(c=>c.name.toLowerCase().includes(query.toLowerCase())||(c.project_name||'').toLowerCase().includes(query.toLowerCase())).map(c=><button className="customer-card" key={c.id} onClick={()=>setSelectedClient(c)}><span className="customer-avatar"><UserRound size={22}/></span><div className="customer-body"><strong>{c.name}</strong><small>{c.project_name||'بدون مشروع'}</small></div><span className={`customer-balance ${c.balance<0?'negative':'positive'}`} dir="ltr">{formatMoney(c.balance)}</span><ChevronLeft size={17}/></button>)}</div>{customerBalances.length===0&&<Empty message="أضف أول عميل عشان تبدأ" Icon={Users}/>}<Button className="mobile-add" onClick={()=>setModal({type:'client'})}><Plus size={17}/> إضافة عميل</Button>
+      </>:tab===2?<><div className="section-heading"><div><h2>الخزينة</h2><p>متابعة حركة النقد والإيداعات</p></div><span className="subdued-pill"><Receipt size={16}/>{rows.length} معاملة</span></div>
+        <div className="metrics-grid"><MoneyCard label="الإيداعات" cents={summary.dep} kind="green" Icon={ArrowDownLeft}/><MoneyCard label="المصروفات" cents={summary.exp} kind="red" Icon={ArrowUpRight}/><MoneyCard label="المتبقي" cents={summary.dep-summary.exp} Icon={Wallet}/></div>
+        <div className="dashboard-grid"><section className="panel"><div className="panel-head"><h3>الإيداعات حسب الطريقة</h3></div><ChartRows rows={groupDeposits(rows)}/></section><section className="panel"><div className="panel-head"><h3>المبالغ المستلمة حسب المهندس</h3></div><ChartRows rows={engineers.map(e=>({name:e.display_name,amount:rows.filter(t=>t.transaction_type==='deposit'&&t.received_by_engineer_id===e.id).reduce((s,t)=>s+t.amount,0)})).filter(x=>x.amount>0)}/></section></div><section className="panel"><div className="panel-head"><h3>جميع المعاملات</h3></div>{txnList(rows)}</section>
+      </>:tab===3?<><div className="section-heading"><div><h2>التقارير المالية</h2><p>لوحة تحليل كاملة بالتفاصيل والبنود</p></div><span className="subdued-pill"><CalendarDays size={16}/>{filteredReport.length} معاملة</span></div>
+        <div className="panel filters-panel"><Select label="العميل" value={reportClient} onChange={setReportClient} blank="كل العملاء" items={customerBalances.map(c=>({id:c.id,label:c.name}))}/><Field label="من تاريخ" value={from} onChange={setFrom} type="date"/><Field label="إلى تاريخ" value={to} onChange={setTo} type="date"/><Button variant="ghost" onClick={()=>{setReportClient('');setFrom('');setTo('');}}>مسح الفلاتر</Button></div>
+        <div className="metrics-grid"><MoneyCard label="إجمالي الإيداعات" cents={report.dep} kind="green" Icon={ArrowDownLeft}/><MoneyCard label="إجمالي المصروفات" cents={report.exp} kind="red" Icon={ArrowUpRight}/><MoneyCard label="صافي الرصيد" cents={report.dep-report.exp} Icon={Wallet}/></div>
+        <div className="report-tabs" role="tablist" aria-label="أقسام التقارير">{[['expenses','بنود المصروفات'],['deposits','طرق الإيداع'],['clients','حسب العملاء'],['transactions','المعاملات']].map(([id,label])=><button type="button" role="tab" aria-selected={reportView===id} className={reportView===id?'selected':''} key={id} onClick={()=>setReportView(id)}>{label}</button>)}</div>
+        <section className="panel report-panel"><div className="panel-head"><h3>{{expenses:'المصروفات حسب البند',deposits:'الإيداعات حسب الطريقة',clients:'الملخص حسب العميل',transactions:'جميع المعاملات'}[reportView]}</h3></div>
+          {reportView==='expenses'?<ChartRows rows={expenseGroups}/>:reportView==='deposits'?<ChartRows rows={depositGroups}/>:reportView==='clients'?<div className="client-report-list">{customerBalances.map(c=>{const r=filteredReport.filter(t=>t.client_id===c.id),m=reportMetrics(r);return r.length?<div key={c.id}><span>{c.name}</span><b dir="ltr">{formatMoney(m.dep-m.exp)}</b></div>:null})}</div>:txnList(filteredReport)}
+        </section><div className="export-row"><Button onClick={()=>downloadReport('xlsx')} disabled={exporting||!filteredReport.length}><FileSpreadsheet size={19}/> {exporting?'بنجّهز التقرير...':'تحميل Excel'}</Button><Button variant="outline" onClick={()=>downloadReport('pdf')} disabled={exporting||!filteredReport.length}><FileText size={19}/> تصدير PDF</Button></div>
+      </>:<><div className="section-heading"><div><h2>الإعدادات</h2><p>الهوية وبيانات المكتب والمزامنة</p></div></div><div className="settings-stack"><label className="setting-item"><span className="setting-icon"><ImageIcon size={21}/></span><span className="setting-copy"><b>لوجو وهوية المكتب</b><small>تغيير صورة الشعار</small></span><Logo size="mini"/><input type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={e=>uploadLogo(e.target.files?.[0])}/><ChevronLeft size={17}/></label>
+        <button className="setting-item" onClick={()=>setModal({type:'manage',table:'engineers'})}><span className="setting-icon"><Users size={21}/></span><span className="setting-copy"><b>إدارة المهندسين</b><small>إضافة وتفعيل أو إيقاف</small></span><ChevronLeft size={17}/></button>
+        <button className="setting-item" onClick={()=>setModal({type:'manage',table:'expense_categories'})}><span className="setting-icon"><Tags size={21}/></span><span className="setting-copy"><b>بنود المصروفات</b><small>تعديل حالة البنود وإضافة الجديد</small></span><ChevronLeft size={17}/></button>
+        <button className="setting-item" onClick={doSync}><span className="setting-icon"><RefreshCw size={21}/></span><span className="setting-copy"><b>المزامنة والنسخ الاحتياطي</b><small>{online?'متصل':'غير متصل'} • {pending} معلّقة {lastSync&&`• آخر مزامنة ${lastSync}`}</small></span><ChevronLeft size={17}/></button>
+        <button className="setting-item" onClick={()=>{setEngineer(null);setSelectedClient(null);}}><span className="setting-icon"><KeyRound size={21}/></span><span className="setting-copy"><b>قفل دخول المهندس</b><small>الرجوع إلى شاشة PIN</small></span><ChevronLeft size={17}/></button>
+        <button className="setting-item danger-setting" onClick={signOut}><span className="setting-icon"><LogOut size={21}/></span><span className="setting-copy"><b>تسجيل خروج المكتب</b><small>{officeUsername}</small></span><ChevronLeft size={17}/></button>
+        </div></>}
+    </main><nav className="bottom-nav" aria-label="تنقل الموبايل">{tabs.map(({label,Icon},i)=><button type="button" key={label} className={tab===i?'selected':''} onClick={()=>{setTab(i);setSelectedClient(null);}}><Icon size={21}/><span>{label}</span></button>)}</nav></div>
+    {modal?.type==='client'&&<ClientForm onClose={()=>setModal(null)} onSave={saveClient}/>}
+    {modal?.type==='chooseTx'&&<Modal title="اختار نوع المعاملة" onClose={()=>setModal(null)}><div className="tx-choices"><button onClick={()=>setModal({type:'tx',txType:'expense'})}><ArrowUpRight size={26}/> صرف</button><button onClick={()=>setModal({type:'tx',txType:'deposit'})}><ArrowDownLeft size={26}/> إيداع</button></div></Modal>}
+    {modal?.type==='tx'&&<TransactionForm key={modal.item?.id||modal.txType} client={selectedClient||clients.find(c=>c.id===modal.item?.client_id)} type={modal.txType} item={modal.item} categories={activeCategories} engineers={activeEngineers} onClose={()=>setModal(null)} onSave={saveTx} saving={busy}/>}
+    {modal?.type==='manage'&&<ManageList title={modal.table==='engineers'?'إدارة المهندسين':'بنود المصروفات'} rows={modal.table==='engineers'?engineers:categories} isEngineer={modal.table==='engineers'} onClose={()=>setModal(null)} onAdd={async name=>saveLookup(modal.table,name)} onToggle={(id,active)=>toggleLookup(modal.table,id,active)} loading={busy}/>}
+    <div className="print-container" id="print-report"><ReportDocument rows={filteredReport} clientLabel={clientLabel} from={from} to={to}/></div>
+  </div>;
 }
-function Login({onSubmit}){const[email,setEmail]=useState(''),[pass,setPass]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');return <form className="auth" onSubmit={async e=>{e.preventDefault();setBusy(true);setError('');try{await onSubmit(email.trim(),pass);}catch(e){setError(e.message.toLowerCase().includes('invalid')?'الإيميل أو الباسورد غلط':e.message)}finally{setBusy(false);}}}><Logo height={170}/><h2>تسجيل دخول المكتب</h2><Field label="الإيميل" value={email} type="email" onChange={setEmail} required/><Field label="الباسورد" value={pass} type="password" onChange={setPass} required/>{error&&<p className="red">{error}</p>}<Button type="submit" disabled={busy}>{busy?'لحظة...':'دخول'}</Button></form>}
-function ClientForm({onClose,onSave}){const[name,setName]=useState(''),[project,setProject]=useState(''),[phone,setPhone]=useState('');return <Modal title="إضافة عميل جديد" onClose={onClose}><form onSubmit={e=>{e.preventDefault();onSave({name,project,phone});}}><Field label="اسم العميل *" value={name} onChange={setName} required/><Field label="اسم المشروع (اختياري)" value={project} onChange={setProject}/><Field label="التليفون (اختياري)" value={phone} onChange={setPhone}/><div className="buttons"><Button outline onClick={onClose}>إلغاء</Button><Button type="submit">إضافة</Button></div></form></Modal>}
-function TransactionForm({client,type,onClose,onSave,categories,engineers}){const[categoryId,setCategoryId]=useState(''),[kind,setKind]=useState(''),[method,setMethod]=useState(''),[recipientId,setRecipientId]=useState(''),[description,setDescription]=useState(''),[amount,setAmount]=useState(''),[date,setDate]=useState(isoToday()),[notes,setNotes]=useState('');return <Modal title={type==='deposit'?'إضافة إيداع':'إضافة مصروف'} onClose={onClose}><form onSubmit={e=>{e.preventDefault();onSave({type,categoryId,kind,method,recipientId,description,amount,date,notes});}}><p><b>العميل: {client.name}</b></p>{type==='expense'?<><Select label="البند *" value={categoryId} onChange={setCategoryId} required items={categories.map(x=>({id:x.id,label:x.name}))}/><Select label="نوع الصرف *" value={kind} onChange={setKind} required items={Object.entries(kinds).map(([id,label])=>({id,label}))}/></>:<><Select label="طريقة الإيداع *" value={method} onChange={setMethod} required items={Object.entries(methods).map(([id,label])=>({id,label}))}/><Select label="المهندس المستلم *" value={recipientId} onChange={setRecipientId} required items={engineers.map(x=>({id:x.id,label:x.display_name}))}/></>}<Field label={type==='deposit'?'بيان الإيداع':'وصف المصروف *'} value={description} onChange={setDescription} required={type==='expense'}/><Field label="المبلغ بالجنيه *" value={amount} onChange={setAmount} required/><Field label="التاريخ" type="date" value={date} onChange={setDate} required/><Field label="ملاحظات (اختياري)" value={notes} onChange={setNotes}/><div className="buttons"><Button outline onClick={onClose}>إلغاء</Button><Button type="submit">حفظ</Button></div></form></Modal>}
-function Summary({title,entries}){return <section className="summary"><h3>{title}</h3><hr/>{entries.length?entries.map(([k,v])=><div className="summaryrow" key={k}><span>{k}</span><b>{formatMoney(v)}</b></div>):<p>لا يوجد</p>}</section>}
-function ManageList({table,rows,onClose,add,toggle,online}){const [name,setName]=useState(''),[loading,setLoading]=useState(false);const title=table==='engineers'?'المهندسون':'بنود المصروفات';return <Modal title={title} onClose={onClose}><form className="inlineadd" onSubmit={async e=>{e.preventDefault();if(!online)return alert('التعديل ده محتاج نت');setLoading(true);try{await add(table,name);setName('');}catch(e){alert(e.message);}finally{setLoading(false);}}}><input value={name} onChange={e=>setName(e.target.value)} placeholder="الاسم"/><Button type="submit" disabled={loading}>إضافة</Button></form>{rows.map(r=><label className="manage" key={r.id}><strong>{table==='engineers'?r.display_name:r.name}</strong><span>{r.active?'مفعّل':'موقوف'}</span><input type="checkbox" checked={r.active} onChange={e=>online?toggle(table,r.id,e.target.checked):alert('التعديل ده محتاج نت')}/></label>)}</Modal>}
 createRoot(document.getElementById('root')).render(<App/>);
