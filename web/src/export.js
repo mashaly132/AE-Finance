@@ -22,7 +22,7 @@ const baseColumns = ['التاريخ', 'العميل', 'النوع', 'البند
 const columnsFor = t => [dateAr(t.transaction_date), t.clientName, t.transaction_type === 'deposit' ? 'إيداع' : t.transaction_type === 'supervision' ? 'نسبة إشراف' : 'صرف',
   t.categoryName, kinds[t.expense_kind] || '', methods[t.payment_method] || '', t.receivedName,
   t.recordedName, t.description, Number(t.amount || 0), t.notes || ''];
-export async function exportExcel(rows, subtitle = 'كل العملاء') {
+export async function exportExcel(rows, subtitle = 'كل العملاء', clients = []) {
   const { default: ExcelJS } = await import('exceljs');
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'AE Finance';
@@ -47,14 +47,32 @@ export async function exportExcel(rows, subtitle = 'كل العملاء') {
   };
   const overview = makeSheet('الملخص', ['المؤشر', 'القيمة (ج.م)']);
   const m = reportMetrics(rows);
-  for (const values of [['إجمالي الإيداعات', m.dep / 100], ['إجمالي المصروفات', m.exp / 100], ['نسبة الإشراف المحصلة', m.sup / 100], ['الرصيد بعد الإشراف', (m.dep - m.exp - m.sup) / 100], ['عدد المعاملات', rows.length]]) overview.addRow(values);
+  const feeBalances = clients.map(c => {
+    const related = rows.filter(t=>t.client_id===c.id);
+    const spentCents = related.filter(t=>t.transaction_type==='expense').reduce((total,t)=>total+Math.round(Number(t.amount||0)*100),0);
+    const paidCents = related.filter(t=>t.transaction_type==='supervision'&&!t.supervision_source_deposit_id).reduce((total,t)=>total+Math.round(Number(t.amount||0)*100),0);
+    const dueCents = Math.round(spentCents*(Number(c.supervision_percent)||0)/100);
+    return { client:c.name, rate:Number(c.supervision_percent)||0,spent:spentCents/100,due:dueCents/100,paid:paidCents/100,remaining:Math.max(0,dueCents-paidCents)/100 };
+  });
+  const totalDue = feeBalances.reduce((n,x)=>n+x.due,0);
+  for (const values of [
+    ['إجمالي الإيداعات', m.dep / 100],
+    ['إجمالي المصروفات', m.exp / 100],
+    ['الإشراف المستحق على المصروفات', totalDue],
+    ['الإشراف المحصّل يدويًا', m.sup / 100],
+    ['الإشراف المتبقي', Math.max(0,totalDue-m.sup/100)],
+    ['الرصيد بعد التحصيل', (m.dep - m.exp - m.sup) / 100],
+    ['عدد المعاملات', rows.length]
+  ]) overview.addRow(values);
+  const dueSheet = makeSheet('الإشراف المستحق', ['العميل', 'نسبة الإشراف %', 'المصروفات (ج.م)', 'المستحق (ج.م)', 'المحصّل يدويًا (ج.م)', 'المتبقي (ج.م)']);
+  for (const row of feeBalances) dueSheet.addRow([row.client,row.rate,row.spent,row.due,row.paid,row.remaining]);
   const expSheet = makeSheet('بنود المصروفات', ['بند المصروف', 'الإجمالي (ج.م)']);
   for (const g of groupExpenses(rows)) expSheet.addRow([g.name, g.amount]);
   const depSheet = makeSheet('طرق الإيداع', ['طريقة الإيداع', 'الإجمالي (ج.م)']);
   for (const g of groupDeposits(rows)) depSheet.addRow([g.name, g.amount]);
   const feeSheet = makeSheet('نسبة الإشراف', ['التاريخ','العميل','نوع التسجيل','المبلغ (ج.م)']);
   for (const t of rows.filter(t => t.transaction_type === 'supervision'))
-    feeSheet.addRow([dateAr(t.transaction_date),t.clientName,t.supervision_source_deposit_id?'احتساب تلقائي':'خصم يدوي',Number(t.amount)]);
+    feeSheet.addRow([dateAr(t.transaction_date),t.clientName,'تحصيل يدوي',Number(t.amount)]);
   const details = makeSheet('كل المعاملات', baseColumns);
   for (const t of [...rows].reverse()) details.addRow(columnsFor(t));
   for (const sheet of workbook.worksheets) {
