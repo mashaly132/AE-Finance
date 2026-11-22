@@ -162,7 +162,7 @@ function App() {
     finally{setLogoUploading(false);}
   }
   async function downloadReport(format){if(!filteredReport.length)return;setExporting(true);try{
-    if(format==='xlsx')await exportExcel(filteredReport,clientLabel);
+    if(format==='xlsx')await exportExcel(filteredReport,clientLabel,clients);
     else await exportPdf(document.getElementById('print-report'),`AE-Finance-Report-${isoToday()}.pdf`);
   }catch(e){alert('حصل خطأ أثناء تجهيز التقرير: '+e.message);}finally{setExporting(false);}}
   const txnList=(list)=><div className="transactions-list">{list.length?list.map(t=><article className="tx-card" key={t.id}><span className={`tx-bubble ${t.transaction_type}`}>
@@ -225,7 +225,7 @@ function App() {
     {modal?.type==='chooseTx'&&<Modal title="اختار نوع المعاملة" onClose={()=>setModal(null)}><div className="tx-choices"><button onClick={()=>setModal({type:'tx',txType:'expense'})}><ArrowUpRight size={26}/> صرف</button><button onClick={()=>setModal({type:'tx',txType:'deposit'})}><ArrowDownLeft size={26}/> إيداع</button><button onClick={()=>setModal({type:'tx',txType:'supervision'})}><Wallet size={26}/> نسبة إشراف</button></div></Modal>}
     {modal?.type==='tx'&&<TransactionForm key={modal.item?.id||modal.txType} client={selectedClient||clients.find(c=>c.id===modal.item?.client_id)} type={modal.txType} item={modal.item} categories={activeCategories} engineers={activeEngineers} onClose={()=>setModal(null)} onSave={saveTx} saving={busy}/>}
     {modal?.type==='manage'&&<ManageList title={modal.table==='engineers'?'إدارة المهندسين':'بنود المصروفات'} rows={modal.table==='engineers'?engineers:categories} isEngineer={modal.table==='engineers'} onClose={()=>setModal(null)} onAdd={async name=>saveLookup(modal.table,name)} onToggle={(id,active)=>toggleLookup(modal.table,id,active)} loading={busy}/>}
-    <div className="print-container" id="print-report"><ReportDocument rows={filteredReport} clientLabel={clientLabel} from={from} to={to}/></div>
+    <div className="print-container" id="print-report"><ReportDocument rows={filteredReport} clients={clients} clientLabel={clientLabel} from={from} to={to}/></div>
   </div>;
 }
 createRoot(document.getElementById('root')).render(<App/>);
