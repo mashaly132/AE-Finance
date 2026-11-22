@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
 export const officeEmail = import.meta.env.VITE_OFFICE_EMAIL || 'mashalybasha@gmail.com';
-export const officeUsername = import.meta.env.VITE_OFFICE_USERNAME || 'mashaly';
+export const officeUsername = import.meta.env.VITE_OFFICE_USERNAME || 'AE-Designs';
 export const url = import.meta.env.VITE_SUPABASE_URL;
 export const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 export const configured = Boolean(url && key);
