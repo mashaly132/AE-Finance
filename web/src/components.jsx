@@ -104,7 +104,7 @@ function AuthLogin({ onLogin, busy }) {
   return <div className="auth-shell"><div className="auth-art"><div className="auth-art-inner"><span className="eyebrow light">AE FINANCE / STUDIO MANAGEMENT</span><h1>إدارة مالية<br/>أبسط. أذكى.<br/>أوضح.</h1><p>كل حركة مالية للمكتب في مكان واحد، وبنفس الهوية اللي تعرفها.</p><div className="art-graphic"><span></span><span></span><span></span><span></span></div></div></div>
     <main className="auth-main"><div className="auth-panel"><Logo size="auth"/><span className="eyebrow">مساحة عمل خاصة بالمكتب</span><h1>أهلًا بيك من جديد</h1><p className="muted">سجّل دخولك باسم المستخدم وكلمة المرور</p>
       <form onSubmit={async e=>{e.preventDefault();setError('');try{await onLogin(username.trim(),password)}catch(err){setError(err.message||'تعذر تسجيل الدخول');}}}>
-        <Field label="اسم المستخدم" placeholder="اسم المستخدم" value={username} onChange={setUsername} autoComplete="username" required/>
+        <Field label="اسم المستخدم" placeholder="AE-Designs" value={username} onChange={setUsername} autoComplete="username" required/>
         <Field label="كلمة المرور"><div className="password-wrap"><input type={show?'text':'password'} value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" autoComplete="current-password" required/><IconButton title={show?'إخفاء كلمة المرور':'إظهار كلمة المرور'} onClick={()=>setShow(v=>!v)}>{show?<EyeOff size={18}/>:<Eye size={18}/>}</IconButton></div></Field>
         {error&&<div className="inline-error" role="alert"><AlertCircle size={16}/>{error}</div>}
         <Button type="submit" disabled={busy} className="auth-submit">{busy?<RefreshCw className="spin" size={18}/>:<ArrowLeft size={18}/>} {busy?'جاري الدخول...':'دخول المكتب'}</Button>
