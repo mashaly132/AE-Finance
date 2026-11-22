@@ -17,7 +17,7 @@ export function groupDeposits(rows) {
     return map;
   }, {})).map(([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount);
 }
-export const reportMetrics = rows => ({ dep: Math.round(sum(rows, 'deposit') * 100), exp: Math.round(sum(rows, 'expense') * 100), sup: Math.round(sum(rows, 'supervision') * 100) });
+export const reportMetrics = rows => ({ dep: Math.round(sum(rows, 'deposit') * 100), exp: Math.round(sum(rows, 'expense') * 100), sup: Math.round(sum(rows.filter(x=>!x.supervision_source_deposit_id), 'supervision') * 100) });
 const baseColumns = ['التاريخ', 'العميل', 'النوع', 'البند', 'نوع الصرف', 'طريقة الإيداع', 'المهندس المستلم', 'المهندس المسجل', 'البيان', 'المبلغ (ج.م)', 'ملاحظات'];
 const columnsFor = t => [dateAr(t.transaction_date), t.clientName, t.transaction_type === 'deposit' ? 'إيداع' : t.transaction_type === 'supervision' ? 'نسبة إشراف' : 'صرف',
   t.categoryName, kinds[t.expense_kind] || '', methods[t.payment_method] || '', t.receivedName,
