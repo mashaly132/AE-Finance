@@ -99,6 +99,7 @@ function App() {
   const clientMetrics=reportMetrics(clientRows);
   useEffect(()=>{setClientTxFilter('all');},[selectedClient?.id]);
   const clientTxOptions=[
+    {id:'all',label:'كل المعاملات'},
     {id:'type:expense',label:'كل المصروفات'},
     {id:'type:deposit',label:'كل الإيداعات'},
     {id:'type:supervision',label:'نسبة إشراف'},
