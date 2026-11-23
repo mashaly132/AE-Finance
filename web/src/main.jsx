@@ -15,6 +15,7 @@ import {
 } from './data';
 import { exportExcel, exportPdf, groupExpenses, groupDeposits, reportMetrics } from './export';
 import { AccountSettings } from './account-settings';
+import { OFFICE_LOGO_BUCKET, OFFICE_LOGO_PATH, announceOfficeLogoChange } from './brand';
 import './style.css';
 
 const methods = { cash:'نقدي', instapay:'InstaPay', vodafone_cash:'Vodafone Cash' };
@@ -32,6 +33,7 @@ function App() {
   const [clients,setClients]=useState([]),[transactions,setTransactions]=useState([]),[categories,setCategories]=useState([]);
   const [tab,setTab]=useState(0),[selectedClient,setSelectedClient]=useState(null),[modal,setModal]=useState(null);
   const [query,setQuery]=useState(''),[reportClient,setReportClient]=useState(''),[reportView,setReportView]=useState('expenses');
+  const [clientTxFilter,setClientTxFilter]=useState('all');
   const [from,setFrom]=useState(''),[to,setTo]=useState(''),[busy,setBusy]=useState(false),[pinBusy,setPinBusy]=useState(false);
   const [error,setError]=useState(''),[online,setOnline]=useState(navigator.onLine),[pending,setPending]=useState(0),[lastSync,setLastSync]=useState('');
   const [sidebarOpen,setSidebarOpen]=useState(false),[exporting,setExporting]=useState(false);
@@ -95,6 +97,19 @@ function App() {
   const activeClient=selectedClient&&customerBalances.find(c=>c.id===selectedClient.id);
   const clientRows=rows.filter(t=>t.client_id===selectedClient?.id);
   const clientMetrics=reportMetrics(clientRows);
+  useEffect(()=>{setClientTxFilter('all');},[selectedClient?.id]);
+  const clientTxOptions=[
+    {id:'type:expense',label:'كل المصروفات'},
+    {id:'type:deposit',label:'كل الإيداعات'},
+    {id:'type:supervision',label:'نسبة إشراف'},
+    ...categories.filter(cat=>clientRows.some(t=>t.transaction_type==='expense'&&t.expense_category_id===cat.id))
+      .map(cat=>({id:'category:'+cat.id,label:cat.name}))
+  ];
+  const visibleClientRows=clientRows.filter(t=>
+    clientTxFilter==='all'||
+    (clientTxFilter.startsWith('type:')&&t.transaction_type===clientTxFilter.slice(5))||
+    (clientTxFilter.startsWith('category:')&&t.transaction_type==='expense'&&t.expense_category_id===clientTxFilter.slice(9))
+  );
   async function saveSupervisionPercent(value){
     if(!activeClient)throw new Error('اختار عميل الأول');
     setBusy(true);
@@ -142,24 +157,32 @@ function App() {
   async function toggleLookup(table,id,active){const {error:e}=await supabase.from(table).update({active}).eq('id',id);if(e)alert(e.message);else await doSync();}
   async function uploadLogo(file){
     if(!file)return;
-    const extensions={'image/png':'png','image/jpeg':'jpg','image/webp':'webp'};
-    const ext=extensions[file.type];
-    if(!ext){setLogoMessage('اختار صورة PNG أو JPG أو WEBP');return;}
-    if(file.size>3*1024*1024){setLogoMessage('حجم اللوجو لازم ما يزيدش عن 3 ميجابايت');return;}
+    if(!['image/png','image/jpeg','image/webp'].includes(file.type)){
+      setLogoMessage('اختار صورة PNG أو JPG أو WEBP');return;
+    }
+    if(file.size>3*1024*1024){
+      setLogoMessage('حجم اللوجو لازم ما يزيدش عن 3 ميجابايت');return;
+    }
     setLogoUploading(true);setLogoMessage('');
     try {
-      if(!navigator.onLine)throw new Error('لازم الإنترنت يكون متصل عشان نحفظ اللوجو');
-      const path=`branding/logo_${Date.now()}_${Math.random().toString(36).slice(2,10)}.${ext}`;
-      const {error:uploadError}=await supabase.storage.from('ae-branding').upload(path,file,{contentType:file.type,upsert:false});
+      if(!navigator.onLine)throw new Error('لازم الإنترنت يكون متصل عشان تحفظ اللوجو');
+      // The single public brand object is readable even before the office has signed in.
+      // Writing it remains restricted by Supabase RLS to active office members.
+      const {error:uploadError}=await supabase.storage.from(OFFICE_LOGO_BUCKET)
+        .upload(OFFICE_LOGO_PATH,file,{contentType:file.type,upsert:true,cacheControl:'0'});
       if(uploadError)throw uploadError;
-      const {error:saveError}=await supabase.from('app_settings').upsert({setting_key:'brand_logo_path',setting_value:{path},updated_by:engineer.id});
+      const version=Date.now();
+      const {error:saveError}=await supabase.from('app_settings').upsert({
+        setting_key:'brand_logo_path',
+        setting_value:{bucket:OFFICE_LOGO_BUCKET,path:OFFICE_LOGO_PATH,version},
+        updated_by:engineer.id
+      });
       if(saveError)throw saveError;
-      const {data:confirmed,error:readError}=await supabase.from('app_settings').select('setting_value').eq('setting_key','brand_logo_path').maybeSingle();
-      if(readError||confirmed?.setting_value?.path!==path)throw new Error('لم نتمكن من التأكد من حفظ اللوجو. جرّب مرة تانية');
-      window.dispatchEvent(new Event('ae-finance:brand-logo-updated'));
-      setLogoMessage('تم حفظ اللوجو الجديد. هيتحدث في النظام بدون إعادة تسجيل الدخول.');
-    }catch(e){setLogoMessage('حصل خطأ أثناء تغيير اللوجو: '+(e?.message||'راجع الاتصال والصلاحيات'));}
-    finally{setLogoUploading(false);}
+      announceOfficeLogoChange();
+      setLogoMessage('اتغير اللوجو في شاشات الدخول والهيدر والتقارير وExcel. هيظهر كمان قبل تسجيل الدخول.');
+    }catch(e){
+      setLogoMessage('تعذر حفظ اللوجو: '+(e?.message||'راجع الاتصال والصلاحيات'));
+    }finally{setLogoUploading(false);}
   }
   async function downloadReport(format){if(!filteredReport.length)return;setExporting(true);try{
     if(format==='xlsx')await exportExcel(filteredReport,clientLabel,clients);
@@ -178,8 +201,8 @@ function App() {
   if(!engineer)return <PinGate engineers={engineers} statuses={pinStatuses} onVerify={onPinVerify} onSetup={onPinSetup} onLogout={()=>supabase.auth.signOut()} busy={pinBusy}/>;
   const titles=['نظرة عامة','حسابات العملاء','الخزينة','التقارير المالية','إعدادات المكتب'];
   return <div className="shell">
-    <aside className={`sidebar ${sidebarOpen?'open':''}`}><div className="sidebar-brand"><span className="brand-monogram">AE</span><div><b>AE FINANCE</b><small>Design Studio</small></div></div><nav aria-label="التنقل الرئيسي">{tabs.map(({label,Icon},i)=><button key={i} title={label} className={`nav-item ${tab===i?'active':''}`} onClick={()=>{setTab(i);setSelectedClient(null);setSidebarOpen(false);}}><Icon size={20}/>{label}</button>)}</nav><div className="sidebar-bottom"><div className="engineer-pill"><UserRound size={18}/><span><strong>{engineer.display_name}</strong><small>حساب المكتب</small></span></div><button className="side-signout" onClick={()=>{setEngineer(null);setSelectedClient(null);}}><KeyRound size={18}/> قفل دخول المهندس</button></div></aside>
-    <div className="workarea"><header className="app-header"><div className="header-main"><IconButton title="القائمة" onClick={()=>setSidebarOpen(o=>!o)}><Menu size={21}/></IconButton><div><small>AE FINANCE / WORKSPACE</small><h1>{selectedClient?'تفاصيل العميل':titles[tab]}</h1></div></div><div className="header-actions"><span className={`network-pill ${online?'online':'offline'}`} title={online?'متصل بالإنترنت':'لا يوجد اتصال'}>{online?<Cloud size={15}/>:<CloudOff size={15}/>}<span>{online?'متصل':'أوفلاين'}</span></span><IconButton title="مزامنة البيانات" onClick={doSync} disabled={busy}><RefreshCw className={busy?'spin':''} size={19}/></IconButton><span className="header-avatar" title={engineer.display_name}><UserRound size={18}/></span></div></header>
+    <aside className={`sidebar ${sidebarOpen?'open':''}`}><div className="sidebar-brand"><Logo size="sidebar"/><div><b>AE FINANCE</b><small>Design Studio</small></div></div><nav aria-label="التنقل الرئيسي">{tabs.map(({label,Icon},i)=><button key={i} title={label} className={`nav-item ${tab===i?'active':''}`} onClick={()=>{setTab(i);setSelectedClient(null);setSidebarOpen(false);}}><Icon size={20}/>{label}</button>)}</nav><div className="sidebar-bottom"><div className="engineer-pill"><UserRound size={18}/><span><strong>{engineer.display_name}</strong><small>حساب المكتب</small></span></div><button className="side-signout" onClick={()=>{setEngineer(null);setSelectedClient(null);}}><KeyRound size={18}/> قفل دخول المهندس</button></div></aside>
+    <div className="workarea"><header className="app-header"><div className="header-main"><IconButton title="القائمة" onClick={()=>setSidebarOpen(o=>!o)}><Menu size={21}/></IconButton><Logo size="header"/><div><small>AE FINANCE / WORKSPACE</small><h1>{selectedClient?'تفاصيل العميل':titles[tab]}</h1></div></div><div className="header-actions"><span className={`network-pill ${online?'online':'offline'}`} title={online?'متصل بالإنترنت':'لا يوجد اتصال'}>{online?<Cloud size={15}/>:<CloudOff size={15}/>}<span>{online?'متصل':'أوفلاين'}</span></span><IconButton title="مزامنة البيانات" onClick={doSync} disabled={busy}><RefreshCw className={busy?'spin':''} size={19}/></IconButton><span className="header-avatar" title={engineer.display_name}><UserRound size={18}/></span></div></header>
     {error&&<div className="app-alert"><AlertCircle size={17}/><span>{error}</span><IconButton title="إغلاق التنبيه" onClick={()=>setError('')}><X size={16}/></IconButton></div>}
     <main className="main-content">
       {selectedClient&&activeClient?<><div className="section-heading"><button className="backlink" onClick={()=>setSelectedClient(null)}><ArrowRight size={17}/> العملاء</button><div><h2>{activeClient.name}</h2><p>{activeClient.project_name||'حساب العميل'}</p></div><Button className="client-add-top" onClick={()=>setModal({type:'chooseTx'})}><Plus size={18}/> معاملة جديدة</Button></div>
@@ -193,7 +216,14 @@ function App() {
           </div>
           <p className="supervision-note">المستحق بيتحسب كنسبة من المصروفات فقط. مش هيتخصم ولا هيتسجل كمحصّل تلقائيًا؛ لما تستلم الإشراف، سجّل معاملة «نسبة إشراف» بالمبلغ والتاريخ.</p>
         </section>
-        <div className="panel"><div className="panel-head"><h3>حركة حساب العميل</h3><span>{clientRows.length} معاملة</span></div>{txnList(clientRows)}</div>
+        <div className="panel">
+          <div className="panel-head"><h3>حركة حساب العميل</h3><span>{visibleClientRows.length} من {clientRows.length} معاملة</span></div>
+          <div className="client-tx-toolbar">
+            <Select label="فلتر معاملات العميل حسب البند" value={clientTxFilter} onChange={setClientTxFilter} blank="كل المعاملات" items={clientTxOptions}/>
+            {clientTxFilter!=='all'&&<Button variant="ghost" onClick={()=>setClientTxFilter('all')}>مسح الفلتر</Button>}
+          </div>
+          {txnList(visibleClientRows)}
+        </div>
       </>:tab===0?<><div className="welcome-block"><div><span className="eyebrow light">نظرة عامة</span><h2>أهلًا يا {engineer.display_name.split(' ').pop()} 👋</h2><p>كل حسابات المكتب، في صورة واضحة.</p></div><div className="welcome-decoration"><TrendingUp size={54}/></div></div>
         <div className="metrics-grid"><MoneyCard label="إجمالي الإيداعات" cents={summary.dep} kind="green" Icon={ArrowDownLeft}/><MoneyCard label="إجمالي المصروفات" cents={summary.exp} kind="red" Icon={ArrowUpRight}/><MoneyCard label="صافي الرصيد بعد الإشراف" cents={summary.dep-summary.exp-summary.sup} Icon={Wallet}/></div>
         <div className="quick-stats"><div><Users size={21}/><span><b>{customerBalances.length}</b><small>عميل نشط</small></span></div><div><Receipt size={21}/><span><b>{rows.length}</b><small>معاملة</small></span></div><div><Cloud size={21}/><span><b>{pending}</b><small>بانتظار المزامنة</small></span></div></div>
