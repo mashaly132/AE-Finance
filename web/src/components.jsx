@@ -99,6 +99,32 @@ function ChartRows({ rows, empty='لا توجد بيانات خلال الفتر
   const max=Math.max(1,...rows.map(r=>r.amount));
   return rows.length?<div className="bar-list">{rows.map((r,i)=><div className="bar-row" key={r.name}><div className="bar-label"><span>{r.name}</span><b>{formatMoney(Math.round(r.amount*100))}</b></div><div className="bar-track"><div className="bar-fill" style={{width:`${Math.max(2,(r.amount/max)*100)}%`,opacity:Math.max(.45,1-i*.075)}}/></div></div>)}</div>:<Empty message={empty}/>;
 }
+function ExpenseBreakdown({ groups }) {
+  if (!groups.length) return <Empty message="مفيش مصروفات في الفترة المحددة"/>;
+  const totals = groups.reduce((sum, group) => ({
+    materials: sum.materials + Math.round(group.materials * 100),
+    labor: sum.labor + Math.round(group.labor * 100)
+  }), { materials: 0, labor: 0 });
+  const total = totals.materials + totals.labor;
+  return <div className="expense-breakdown">
+    <div className="expense-breakdown-totals">
+      <div><span>إجمالي الخامات</span><strong dir="ltr">{formatMoney(totals.materials)}</strong></div>
+      <div><span>إجمالي المصنعية</span><strong dir="ltr">{formatMoney(totals.labor)}</strong></div>
+      <div><span>إجمالي المصروفات</span><strong dir="ltr">{formatMoney(total)}</strong></div>
+    </div>
+    <div className="expense-breakdown-list">
+      {groups.map((group, i) => <article className="expense-category-card" key={group.name + i}>
+        <div className="expense-category-title"><strong>{group.name}</strong>
+          <div><span>إجمالي البند</span><b dir="ltr">{formatMoney(Math.round(group.amount * 100))}</b></div>
+        </div>
+        <div className="expense-category-splits">
+          <div className="expense-split-materials"><span>خامات</span><b dir="ltr">{formatMoney(Math.round(group.materials * 100))}</b></div>
+          <div className="expense-split-labor"><span>مصنعية</span><b dir="ltr">{formatMoney(Math.round(group.labor * 100))}</b></div>
+        </div>
+      </article>)}
+    </div>
+  </div>;
+}
 function AuthLogin({ onLogin, busy }) {
   const [username,setUsername]=useState(''),[password,setPassword]=useState(''),[show,setShow]=useState(false),[error,setError]=useState('');
   return <div className="auth-shell"><div className="auth-art"><div className="auth-art-inner"><span className="eyebrow light">AE FINANCE / STUDIO MANAGEMENT</span><h1>إدارة مالية<br/>أبسط. أذكى.<br/>أوضح.</h1><p>كل حركة مالية للمكتب في مكان واحد، وبنفس الهوية اللي تعرفها.</p><div className="art-graphic"><span></span><span></span><span></span><span></span></div></div></div>
@@ -192,7 +218,15 @@ function ReportDocument({ rows, clients=[], clientLabel, from, to }) {
   const outstanding=Math.max(0,due-m.sup);
   return <div className="report-document" dir="rtl"><div className="doc-head"><div><strong>AE FINANCE</strong><span>تقرير حسابات المكتب</span></div><div className="doc-date">{dateAr(isoToday())}</div></div><div className="doc-meta">{clientLabel} {from?` | من ${dateAr(from)}`:''} {to?` | حتى ${dateAr(to)}`:''}</div>
     <div className="doc-kpis"><div><span>الإيداعات</span><b>{formatMoney(m.dep)}</b></div><div><span>المصروفات</span><b>{formatMoney(m.exp)}</b></div><div><span>الإشراف المستحق</span><b>{formatMoney(due)}</b></div><div><span>الإشراف المحصّل يدويًا</span><b>{formatMoney(m.sup)}</b></div><div><span>الإشراف المتبقي</span><b>{formatMoney(outstanding)}</b></div><div><span>الرصيد بعد التحصيل</span><b>{formatMoney(m.dep-m.exp-m.sup)}</b></div></div>
-    <h3>بنود المصروفات</h3><table><thead><tr><th>البند</th><th>الإجمالي</th></tr></thead><tbody>{expenses.map(r=><tr key={r.name}><td>{r.name}</td><td>{formatMoney(Math.round(r.amount*100))}</td></tr>)}{!expenses.length&&<tr><td colSpan="2">لا يوجد</td></tr>}</tbody></table>
+    <h3>بنود المصروفات — خامات ومصنعية</h3>
+    <table className="expense-report-table">
+      <thead><tr><th>البند</th><th>خامات</th><th>مصنعية</th><th>الإجمالي</th></tr></thead>
+      <tbody>
+        {expenses.map((r,i)=><tr key={r.name+i}><td>{r.name}</td><td>{formatMoney(Math.round(r.materials*100))}</td><td>{formatMoney(Math.round(r.labor*100))}</td><td>{formatMoney(Math.round(r.amount*100))}</td></tr>)}
+        {!expenses.length&&<tr><td colSpan="4">لا توجد مصروفات</td></tr>}
+        {expenses.length>0&&<tr className="doc-total-row"><td>الإجمالي</td><td>{formatMoney(expenses.reduce((total,r)=>total+Math.round(r.materials*100),0))}</td><td>{formatMoney(expenses.reduce((total,r)=>total+Math.round(r.labor*100),0))}</td><td>{formatMoney(m.exp)}</td></tr>}
+      </tbody>
+    </table>
     <h3>طرق الإيداع</h3><table><thead><tr><th>الطريقة</th><th>الإجمالي</th></tr></thead><tbody>{deposits.map(r=><tr key={r.name}><td>{r.name}</td><td>{formatMoney(Math.round(r.amount*100))}</td></tr>)}{!deposits.length&&<tr><td colSpan="2">لا يوجد</td></tr>}</tbody></table>
     <h3>تحصيل نسبة الإشراف (يدوي فقط)</h3><table><thead><tr><th>العميل</th><th>المبلغ المحصّل</th></tr></thead><tbody>{rows.filter(t=>t.transaction_type==='supervision').map(t=><tr key={t.id}><td>{t.clientName}</td><td>{formatMoney(t.cents)}</td></tr>)}{!rows.some(t=>t.transaction_type==='supervision')&&<tr><td colSpan="2">لا توجد</td></tr>}</tbody></table>
     <h3>تفاصيل المعاملات ({rows.length})</h3><table className="details-table"><thead><tr><th>التاريخ</th><th>العميل</th><th>النوع</th><th>البيان / البند</th><th>المبلغ</th></tr></thead><tbody>{rows.map(t=><tr key={t.id}><td>{dateAr(t.transaction_date)}</td><td>{t.clientName}</td><td>{t.transaction_type==='deposit'?'إيداع':t.transaction_type==='supervision'?'نسبة إشراف':'صرف'}</td><td>{t.description}{t.categoryName?` - ${t.categoryName}`:''}</td><td>{formatMoney(t.cents)}</td></tr>)}{!rows.length&&<tr><td colSpan="5">لا توجد معاملات</td></tr>}</tbody></table>
@@ -200,4 +234,4 @@ function ReportDocument({ rows, clients=[], clientLabel, from, to }) {
   </div>;
 }
 
-export { Logo, Button, IconButton, Field, Select, Modal, MoneyCard, Empty, ChartRows, AuthLogin, PinGate, TransactionForm, ClientForm, SupervisionPercentForm, ManageList, ReportDocument };
+export { Logo, Button, IconButton, Field, Select, Modal, MoneyCard, Empty, ChartRows, ExpenseBreakdown, AuthLogin, PinGate, TransactionForm, ClientForm, SupervisionPercentForm, ManageList, ReportDocument };
