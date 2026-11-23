@@ -1,4 +1,5 @@
 import { dateAr, formatMoney, isoToday } from './data';
+import { loadOfficeLogo } from './brand';
 const kinds = { materials: 'خامات', labor: 'مصنعية' };
 const methods = { cash: 'نقدي', instapay: 'InstaPay', vodafone_cash: 'Vodafone Cash' };
 const sum = (rows, type) => rows.filter(x => x.transaction_type === type).reduce((n, t) => n + Number(t.amount || 0), 0);
@@ -41,13 +42,44 @@ export async function exportExcel(rows, subtitle = 'كل العملاء', client
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'AE Finance';
   workbook.created = new Date();
+  // ExcelJS embeds PNG/JPEG. The actual office logo is identical to the one in
+  // login, engineer PIN, navigation and PDF.
+  let logoImageId = null;
+  try {
+    let imageData = await loadOfficeLogo({force:true});
+    let extension = imageData.startsWith('data:image/jpeg;') ? 'jpeg' : 'png';
+    if (imageData.startsWith('data:image/webp;')) {
+      // WebP is rendered losslessly to PNG for Excel's supported image formats.
+      const image = new Image();
+      image.src = imageData;
+      await image.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
+      canvas.getContext('2d').drawImage(image,0,0);
+      imageData = canvas.toDataURL('image/png');
+      extension = 'png';
+    }
+    if (/^data:image\/(?:png|jpeg);base64,/.test(imageData))
+      logoImageId = workbook.addImage({base64:imageData,extension});
+  } catch (error) {
+    console.warn('Report Excel logo could not be embedded; exporting the financial figures.',error);
+  }
   const makeSheet = (name, cols) => {
     const sh = workbook.addWorksheet(name, { views: [{ rightToLeft: true, state: 'frozen', ySplit: 4 }], properties: { defaultRowHeight: 22 } });
     sh.mergeCells(1, 1, 1, cols.length);
     sh.getCell(1, 1).value = 'AE FINANCE  |  تقرير حسابات المكتب';
     sh.getCell(1, 1).font = { name: 'Arial', size: 17, bold: true, color: { argb: 'FFFFFFFF' } };
     sh.getCell(1, 1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF142D3B' } };
-    sh.getRow(1).height = 36;
+    sh.getCell(1, 1).alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+    sh.getRow(1).height = logoImageId === null ? 36 : 62;
+    if (logoImageId !== null) {
+      // Office identity, shown on every worksheet without changing image content.
+      sh.addImage(logoImageId, {
+        tl: { col: 0.08, row: 0.10 },
+        ext: { width: 100, height: 75 },
+        editAs: 'oneCell'
+      });
+    }
     sh.mergeCells(2, 1, 2, cols.length);
     sh.getCell(2, 1).value = `${subtitle} • تاريخ التصدير ${dateAr(isoToday())}`;
     sh.getCell(2, 1).font = { name: 'Arial', size: 12, color: { argb: 'FF142D3B' } };
