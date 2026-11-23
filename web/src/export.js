@@ -4,11 +4,25 @@ const methods = { cash: 'نقدي', instapay: 'InstaPay', vodafone_cash: 'Vodafo
 const sum = (rows, type) => rows.filter(x => x.transaction_type === type).reduce((n, t) => n + Number(t.amount || 0), 0);
 const money = amount => Math.round(Number(amount || 0) * 100) / 100;
 export function groupExpenses(rows) {
-  return Object.entries(rows.filter(t => t.transaction_type === 'expense').reduce((map, row) => {
+  // Keep calculations in integer piastres to avoid rounding drift.
+  // Preserve the existing "amount" field for dashboard charts.
+  const byCategory = new Map();
+  for (const row of rows) {
+    if (row.transaction_type !== 'expense') continue;
     const name = row.categoryName || 'بدون بند';
-    map[name] = (map[name] || 0) + money(row.amount);
-    return map;
-  }, {})).map(([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount);
+    const key = row.expense_category_id || name;
+    const item = byCategory.get(key) || { name, materialsCents: 0, laborCents: 0 };
+    const cents = Math.round(Number(row.amount || 0) * 100);
+    if (row.expense_kind === 'materials') item.materialsCents += cents;
+    else if (row.expense_kind === 'labor') item.laborCents += cents;
+    byCategory.set(key, item);
+  }
+  return Array.from(byCategory.values(), ({name, materialsCents, laborCents}) => ({
+    name,
+    materials: materialsCents / 100,
+    labor: laborCents / 100,
+    amount: (materialsCents + laborCents) / 100
+  })).sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name, 'ar'));
 }
 export function groupDeposits(rows) {
   return Object.entries(rows.filter(t => t.transaction_type === 'deposit').reduce((map, row) => {
@@ -66,8 +80,19 @@ export async function exportExcel(rows, subtitle = 'كل العملاء', client
   ]) overview.addRow(values);
   const dueSheet = makeSheet('الإشراف المستحق', ['العميل', 'نسبة الإشراف %', 'المصروفات (ج.م)', 'المستحق (ج.م)', 'المحصّل يدويًا (ج.م)', 'المتبقي (ج.م)']);
   for (const row of feeBalances) dueSheet.addRow([row.client,row.rate,row.spent,row.due,row.paid,row.remaining]);
-  const expSheet = makeSheet('بنود المصروفات', ['بند المصروف', 'الإجمالي (ج.م)']);
-  for (const g of groupExpenses(rows)) expSheet.addRow([g.name, g.amount]);
+  const expSheet = makeSheet('بنود المصروفات', ['بند المصروف', 'خامات (ج.م)', 'مصنعية (ج.م)', 'إجمالي البند (ج.م)']);
+  const expenseGroups = groupExpenses(rows);
+  for (const g of expenseGroups) expSheet.addRow([g.name, g.materials, g.labor, g.amount]);
+  const expenseTotals = expenseGroups.reduce((totals, g) => ({
+    materials: totals.materials + Math.round(g.materials * 100),
+    labor: totals.labor + Math.round(g.labor * 100)
+  }), { materials: 0, labor: 0 });
+  const totalsRow = expSheet.addRow([
+    'الإجمالي', expenseTotals.materials / 100, expenseTotals.labor / 100,
+    (expenseTotals.materials + expenseTotals.labor) / 100
+  ]);
+  totalsRow.font = { bold: true, color: { argb: 'FF142D3B' } };
+  totalsRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1E8DA' } };
   const depSheet = makeSheet('طرق الإيداع', ['طريقة الإيداع', 'الإجمالي (ج.م)']);
   for (const g of groupDeposits(rows)) depSheet.addRow([g.name, g.amount]);
   const feeSheet = makeSheet('نسبة الإشراف', ['التاريخ','العميل','نوع التسجيل','المبلغ (ج.م)']);
