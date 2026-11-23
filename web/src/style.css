@@ -61,3 +61,12 @@
  .supervision-summary{grid-template-columns:repeat(3,minmax(0,1fr))}
  .doc-kpis{grid-template-columns:repeat(4,minmax(0,1fr))}
 }
+
+
+/* The client-specific New Transaction action stays at the top on every screen size. */
+.client-add-top{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:46px;flex-shrink:0;transition:transform .18s ease,box-shadow .18s ease}
+.client-add-top:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(20,45,59,.16)}
+.client-add-top:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
+@media(max-width:779px){
+  .section-heading:has(.client-add-top)>.client-add-top{width:100%;order:3;margin-top:8px;min-height:50px}
+}
