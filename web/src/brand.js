@@ -23,6 +23,19 @@ export function cachedOfficeLogo() {
   return logoAsset;
 }
 
+function updateFavicon(src) {
+  if (typeof document === 'undefined' || !src) return;
+  let icon = document.querySelector('link[rel="icon"]');
+  if (!icon) {
+    icon = document.createElement('link');
+    icon.rel = 'icon';
+    document.head.appendChild(icon);
+  }
+  icon.href = src;
+  icon.type = src.startsWith('data:image/jpeg') ? 'image/jpeg' :
+    src.startsWith('data:image/webp') ? 'image/webp' : 'image/png';
+}
+
 const blobToDataUrl = blob => new Promise((resolve, reject) => {
   const reader = new FileReader();
   reader.onload = () => resolve(reader.result);
@@ -48,21 +61,22 @@ export async function loadOfficeLogo({ force = false } = {}) {
       const imageData = await blobToDataUrl(blob);
       if (!isImageDataUrl(imageData)) throw new Error('تنسيق صورة الشعار غير مدعوم');
       currentLogo = imageData;
+      updateFavicon(imageData);
       try { window.localStorage.setItem(CACHE_KEY, imageData); } catch {}
       return imageData;
     } catch {
       // The exact original office logo is included in the app, works before sign-in,
       // and remains available if the public bucket has not been customized yet.
-      if (isImageDataUrl(currentLogo)) return currentLogo;
+      if (isImageDataUrl(currentLogo)) { updateFavicon(currentLogo); return currentLogo; }
       try {
         const cached = window.localStorage.getItem(CACHE_KEY);
-        if (isImageDataUrl(cached)) return cached;
+        if (isImageDataUrl(cached)) { updateFavicon(cached); return cached; }
       } catch {}
       try {
         const response = await fetch(logoAsset);
         if (response.ok) {
           const value = await blobToDataUrl(await response.blob());
-          if (isImageDataUrl(value)) return value;
+          if (isImageDataUrl(value)) { updateFavicon(value); return value; }
         }
       } catch {}
       return logoAsset;
