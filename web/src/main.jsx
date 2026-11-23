@@ -220,7 +220,7 @@ function App() {
         <div className="panel">
           <div className="panel-head"><h3>حركة حساب العميل</h3><span>{visibleClientRows.length} من {clientRows.length} معاملة</span></div>
           <div className="client-tx-toolbar">
-            <Select label="فلتر معاملات العميل حسب البند" value={clientTxFilter} onChange={setClientTxFilter} blank="كل المعاملات" items={clientTxOptions}/>
+            <Select label="فلتر معاملات العميل حسب البند" value={clientTxFilter} onChange={setClientTxFilter} blank={null} items={clientTxOptions}/>
             {clientTxFilter!=='all'&&<Button variant="ghost" onClick={()=>setClientTxFilter('all')}>مسح الفلتر</Button>}
           </div>
           {txnList(visibleClientRows)}
