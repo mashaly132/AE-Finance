@@ -14,65 +14,42 @@ import {
   getPinStatuses, setEngineerPin, verifyEngineerPin
 } from './data';
 import { exportExcel, exportPdf, groupExpenses, groupDeposits, reportMetrics } from './export';
-import { logoAsset } from './logo-data';
+import { OFFICE_LOGO_EVENT, cachedOfficeLogo, loadOfficeLogo } from './brand';
 import './style.css';
 
 const methods = { cash:'نقدي', instapay:'InstaPay', vodafone_cash:'Vodafone Cash' };
 const kinds = { materials:'خامات', labor:'مصنعية' };
-const logo = logoAsset;
 const tabs = [
   { label:'الرئيسية', Icon:LayoutDashboard }, { label:'العملاء', Icon:Users },
   { label:'الخزينة', Icon:Wallet }, { label:'التقارير', Icon:ChartNoAxesCombined },
   { label:'الإعدادات', Icon:Settings }
 ];
 
-const BRAND_CACHE_KEY = 'ae-finance-brand-logo';
-function savedBrand() {
-  try {
-    const cached = window.localStorage.getItem(BRAND_CACHE_KEY);
-    return cached && /^data:image\/(png|jpeg|webp);base64,/.test(cached) ? cached : logoAsset;
-  } catch { return logoAsset; }
-}
 function Logo({ className='', size='large' }) {
-  const [src,setSrc] = useState(savedBrand);
+  const [src,setSrc] = useState(cachedOfficeLogo);
   useEffect(() => {
     let mounted = true;
-    let request = 0;
-    async function refreshBrand() {
-      const currentRequest = ++request;
-      if (!supabase) return;
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) return; // Private storage is never read anonymously.
-        const { data:setting,error:settingError } = await supabase.from('app_settings')
-          .select('setting_value').eq('setting_key','brand_logo_path').maybeSingle();
-        if (settingError) throw settingError;
-        const path = setting?.setting_value?.path;
-        if (!path || !/^branding\/(?:logo_[a-zA-Z0-9._-]+|ae_logo)\.(?:png|jpe?g|webp)$/.test(path)) return;
-        const { data:blob,error:downloadError } = await supabase.storage.from('ae-branding').download(path);
-        if (downloadError) throw downloadError;
-        if (!blob || !mounted || currentRequest !== request) return;
-        const reader = new FileReader();
-        reader.onload = () => {
-          if (!mounted || currentRequest !== request || typeof reader.result !== 'string') return;
-          if (!/^data:image\/(png|jpeg|webp);base64,/.test(reader.result)) return;
-          setSrc(reader.result);
-          try { window.localStorage.setItem(BRAND_CACHE_KEY,reader.result); } catch {}
-        };
-        reader.readAsDataURL(blob);
-      } catch (err) {
-        console.warn('Brand logo: the saved image could not be loaded; using the fallback image.',err);
-      }
-    }
-    refreshBrand();
-    window.addEventListener('ae-finance:brand-logo-updated',refreshBrand);
+    const refresh = () => {
+      loadOfficeLogo({force:true}).then(image => {
+        if (mounted) setSrc(image);
+      }).catch(() => {
+        if (mounted) setSrc(cachedOfficeLogo());
+      });
+    };
+    refresh();
+    const onStorage = event => {
+      if (event.key === 'ae-finance-office-logo-v4') refresh();
+    };
+    window.addEventListener(OFFICE_LOGO_EVENT, refresh);
+    window.addEventListener('storage', onStorage);
     return () => {
-      mounted = false; ++request;
-      window.removeEventListener('ae-finance:brand-logo-updated',refreshBrand);
+      mounted = false;
+      window.removeEventListener(OFFICE_LOGO_EVENT, refresh);
+      window.removeEventListener('storage', onStorage);
     };
   }, []);
   return <span className={`brand-frame brand-${size} ${className}`}>
-    <img className="brand-logo" src={src} alt="Ahmed Elsera Design Studio" decoding="async" />
+    <img className="brand-logo" src={src} alt="شعار مكتب أحمد السيرة للتصميم" decoding="async" />
   </span>;
 }
 function Button({ children, variant='primary', onClick, type='button', disabled, className='', title }) {
@@ -216,7 +193,7 @@ function ReportDocument({ rows, clients=[], clientLabel, from, to }) {
     return total+Math.round(spent*(Number(c.supervision_percent)||0)/100);
   },0);
   const outstanding=Math.max(0,due-m.sup);
-  return <div className="report-document" dir="rtl"><div className="doc-head"><div><strong>AE FINANCE</strong><span>تقرير حسابات المكتب</span></div><div className="doc-date">{dateAr(isoToday())}</div></div><div className="doc-meta">{clientLabel} {from?` | من ${dateAr(from)}`:''} {to?` | حتى ${dateAr(to)}`:''}</div>
+  return <div className="report-document" dir="rtl"><div className="doc-head"><div className="doc-brand"><Logo size="report"/><div><strong>AE FINANCE</strong><span>تقرير حسابات المكتب</span></div></div><div className="doc-date">{dateAr(isoToday())}</div></div><div className="doc-meta">{clientLabel} {from?` | من ${dateAr(from)}`:''} {to?` | حتى ${dateAr(to)}`:''}</div>
     <div className="doc-kpis"><div><span>الإيداعات</span><b>{formatMoney(m.dep)}</b></div><div><span>المصروفات</span><b>{formatMoney(m.exp)}</b></div><div><span>الإشراف المستحق</span><b>{formatMoney(due)}</b></div><div><span>الإشراف المحصّل يدويًا</span><b>{formatMoney(m.sup)}</b></div><div><span>الإشراف المتبقي</span><b>{formatMoney(outstanding)}</b></div><div><span>الرصيد بعد التحصيل</span><b>{formatMoney(m.dep-m.exp-m.sup)}</b></div></div>
     <h3>بنود المصروفات — خامات ومصنعية</h3>
     <table className="expense-report-table">
