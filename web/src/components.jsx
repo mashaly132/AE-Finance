@@ -62,7 +62,7 @@ function Field({ label, value, onChange, type='text', required=false, placeholde
   return <label className="form-field"><span>{label}</span>{children || <input value={value ?? ''} onChange={e=>onChange(e.target.value)} type={type} required={required} placeholder={placeholder} autoComplete={autoComplete} inputMode={inputMode} maxLength={maxLength}/>}</label>;
 }
 function Select({ label, value, onChange, items, blank='اختر', required=false }) {
-  return <Field label={label}><select value={value??''} required={required} onChange={e=>onChange(e.target.value)}><option value="">{blank}</option>{items.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></Field>;
+  return <Field label={label}><select value={value??''} required={required} onChange={e=>onChange(e.target.value)}>{blank!==null&&<option value="">{blank}</option>}{items.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></Field>;
 }
 function Modal({ title, onClose, children, subtitle='' }) {
   useEffect(() => {const handler=e=>e.key==='Escape'&&onClose();document.addEventListener('keydown',handler);return()=>document.removeEventListener('keydown',handler);},[onClose]);
