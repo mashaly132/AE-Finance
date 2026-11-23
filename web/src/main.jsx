@@ -225,7 +225,7 @@ function App() {
           </div>
           {txnList(visibleClientRows)}
         </div>
-      </>:tab===0?<><div className="welcome-block"><div><span className="eyebrow light">نظرة عامة</span><h2>أهلًا يا {engineer.display_name.split(' ').pop()} 👋</h2><p>كل حسابات المكتب، في صورة واضحة.</p></div><div className="welcome-decoration"><TrendingUp size={54}/></div></div>
+      </>:tab===0?<><div className="welcome-block"><div><span className="eyebrow light">نظرة عامة</span><h2>أهلًا يا {engineer.display_name} 👋</h2><p>كل حسابات المكتب، في صورة واضحة.</p></div><div className="welcome-decoration"><TrendingUp size={54}/></div></div>
         <div className="metrics-grid"><MoneyCard label="إجمالي الإيداعات" cents={summary.dep} kind="green" Icon={ArrowDownLeft}/><MoneyCard label="إجمالي المصروفات" cents={summary.exp} kind="red" Icon={ArrowUpRight}/><MoneyCard label="صافي الرصيد بعد الإشراف" cents={summary.dep-summary.exp-summary.sup} Icon={Wallet}/></div>
         <div className="quick-stats"><div><Users size={21}/><span><b>{customerBalances.length}</b><small>عميل نشط</small></span></div><div><Receipt size={21}/><span><b>{rows.length}</b><small>معاملة</small></span></div><div><Cloud size={21}/><span><b>{pending}</b><small>بانتظار المزامنة</small></span></div></div>
         <div className="dashboard-grid"><section className="panel"><div className="panel-head"><h3>أحدث المعاملات</h3><button className="link-button" onClick={()=>setTab(2)}>عرض الخزينة <ChevronLeft size={15}/></button></div>{txnList(latestRows)}</section>
